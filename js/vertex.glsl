@@ -25,21 +25,21 @@ uniform int mode;
 
 out vec3 shading_mode;
 
-    // for flat shading
+// for flat shading
 flat out vec4 flatcolor;
 
-    // for gouraud shading
+// for gouraud shading
 out vec4 fragcolor;
 
-    // for phong shading
-    // out vec3 vertexColor;
-    // out vec3 fragPosition;
-    // out vec3 fragNormal;
-    // out vec3 lightLocations[3];
-    // out vec3 lightColors[3];
-    // out vec3 lightKdKsCDs[3];
-    // out float Ka_val;
-    // out vec3 ambient_lightColor;
+// for phong shading
+out vec3 vertexColor;
+out vec3 fragPosition;
+out vec3 fragNormal;
+out vec3 lightLocations[3];
+out vec3 lightColors[3];
+out vec3 lightKdKsCDs[3];
+out float Ka_val;
+out vec3 ambient_lightColor;
 
 vec3 shading(vec3 vertex) {
     vec3 phong = vec3(0.f, 0.f, 0.f);
@@ -77,25 +77,27 @@ void main(void) {
     vec3 vertex_copy = aVertexPosition;
 
     if(mode == 0) {
-            // flat shading
+        // flat shading
         flatcolor = vec4(shading(vertex_copy), 1.0f);
     }
 
     if(mode == 1) {
-            // gouraud shading
+        // gouraud shading
         fragcolor = vec4(shading(vertex_copy), 1.0f);
     }
 
     if(mode == 2) {
-            // TODO: phong shading
-
-            // Ka_val = Ka;
-            // ambient_lightColor = ambient_color;
-            // for(int i=0; i<3 ; ++i){
-            //     lightLocations[i] = lightLoc[i];
-            //     lightColors[i] = lightColor[i];
-            //     lightKdKsCDs[i] = lightKdKsCD[i];
-            // }
+        // phong shading
+        vertexColor = aFrontColor;
+        fragPosition = (uMVMatrix * vec4(vertex_copy, 1.0f)).xyz;
+        fragNormal = mat3(uMVMatrix) * aVertexNormal;
+        Ka_val = Ka;
+        ambient_lightColor = ambient_color;
+        for(int i = 0; i < 3; ++i) {
+            lightLocations[i] = lightLoc[i];
+            lightColors[i] = lightColor[i];
+            lightKdKsCDs[i] = lightKdKsCD[i];
+        }
     }
 
     gl_Position = uPMatrix * uMVMatrix * vec4(vertex_copy, 1.0f);

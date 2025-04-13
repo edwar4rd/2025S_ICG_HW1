@@ -60,6 +60,7 @@
         var mvMatrix = mat4.create();
         var pMatrix = mat4.create();
         // object parameters
+        const OBJECT_COUNT = 1;
         var obj_names = ["Teapot.json"];
         var obj_vec = [];
         var obj_default_trans = [vec3.create([0., 0., -15.]), vec3.create([15., 0., -37.]), vec3.create([-15., -1., -37.])];
@@ -193,8 +194,7 @@
             gl.clearColor(ka * ambiet_light_color[0], ka * ambiet_light_color[1], ka * ambiet_light_color[2], transparent);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            for (var i = 0; i < 3; ++i) {
-
+            for (var i = 0; i < OBJECT_COUNT; ++i) {
                 if (obj_vec[i].VertexPositionBuffer == null || obj_vec[i].VertexNormalBuffer == null || obj_vec[i].VertexFrontColorBuffer == null) {
                     continue;
                 }
@@ -247,8 +247,10 @@
             initGL(canvas);
             initShaders();
 
-            for (var i = 0; i < 3; i += 1) {
+            for (var i = 0; i < OBJECT_COUNT; i += 1) {
+                console.log(obj_names[i]);
                 obj_vec.push(new CGObject(i, obj_names[i], obj_default_trans[i], obj_default_rotate[i], obj_default_scale[i], obj_default_shear));
+                console.log(obj_vec[i]);
                 loadObj(obj_vec[i]);
             }
 
