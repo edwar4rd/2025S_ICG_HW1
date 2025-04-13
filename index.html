@@ -14,7 +14,6 @@
     to implement flat, gouraud and phong shading -->
     <script type="x-shader/x-fragment" id="fragmentShader">
     #extension GL_OES_standard_derivatives : enable 
-
     precision mediump float;
 
     varying vec3 shading_mode;
@@ -67,7 +66,6 @@
     uniform vec3 ambient_color;
     
     uniform int mode;
-    uniform float volume;
 
     varying vec3 vertexColor;
     varying vec3 fragPosition;
@@ -93,9 +91,6 @@
         shading_mode = vec3(mode);
 
         vec3 vertex_copy = aVertexPosition;
-        vertex_copy.x *= 1.+volume;
-        vertex_copy.y *= 1.+volume;
-        vertex_copy.z *= 1.+volume;
 
         if(mode == 0) {
             // TODO: flat shading
@@ -145,9 +140,6 @@
     <script type="text/javascript">
         // common variables
         var gl;
-        var shaderProgram;
-        var analyser;
-        var frequencyData = new Uint8Array();
         // rendering method
         var mode = 0;
         // modeling and perspective matrixs
@@ -260,29 +252,6 @@
             gl.uniform3fv(gl.getUniformLocation(shaderProgram, "lightKdKsCD"), light_kdkscd);
             gl.uniform1f(gl.getUniformLocation(shaderProgram, "Ka"), ka);
             gl.uniform3fv(gl.getUniformLocation(shaderProgram, "ambient_color"), ambiet_light_color);
-
-            var context = new AudioContext();
-            var audio = document.getElementById('myAudio');
-            var audioSrc = context.createMediaElementSource(audio);
-            var sourceJs = context.createScriptProcessor(2048);
-
-            analyser = context.createAnalyser();
-            analyser.smoothingTimeConstant = 0.6;
-            analyser.fftSize = 512;
-
-            audioSrc.connect(analyser);
-            analyser.connect(sourceJs);
-            sourceJs.buffer = audioSrc.buffer;
-            sourceJs.connect(context.destination);
-            audioSrc.connect(context.destination);
-
-            sourceJs.onaudioprocess = function (e) {
-                frequencyData = new Uint8Array(analyser.frequencyBinCount);
-                analyser.getByteFrequencyData(frequencyData);
-            };
-
-            audio.play();
-            gl.uniform1f(gl.getUniformLocation(shaderProgram, "volume"), 0.);
         }
 
         function setMatrixUniforms(obj) {
@@ -364,7 +333,6 @@
                 gl.uniform1f(gl.getUniformLocation(shaderProgram, "Ka"), ka);
                 gl.uniform3fv(gl.getUniformLocation(shaderProgram, "ambient_color"), ambiet_light_color);
 
-                gl.uniform1f(gl.getUniformLocation(shaderProgram, "volume"), frequencyData[Math.floor(256 / 7) * i] / 625);
                 gl.drawArrays(gl.TRIANGLES, 0, obj_vec[i].VertexPositionBuffer.numItems);
             }
         }
@@ -372,8 +340,6 @@
         function tick() {
             requestAnimFrame(tick);
             drawScene();
-
-            analyser.getByteFrequencyData(frequencyData);
 
             if (rotate_flag) {
                 rotate_objects();
@@ -448,8 +414,6 @@
 </head>
 
 <body onload="webGLStart();">
-    <audio style="position: absolute; right: 4%; bottom: 30%; z-index: 2;" id="myAudio"></audio>
-
     <p style="position: absolute; right: 2%; top:6%; ">
         <canvas id="ICG-canvas" style="border: none;" width="1060" height="590"></canvas>
     </p>
