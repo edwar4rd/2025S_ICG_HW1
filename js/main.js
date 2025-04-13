@@ -6,12 +6,12 @@ var mode = 0;
 var mvMatrix = mat4.create();
 var pMatrix = mat4.create();
 // object parameters
-const OBJECT_COUNT = 2;
-var obj_names = ["Teapot.json", "Mig27.json"];
+const OBJECT_COUNT = 3;
+var obj_names = ["Teapot.json", "Slider.json", "Mig27.json"];
 var obj_vec = [];
 var obj_default_trans = [vec3.create([0., 0., -15.]), vec3.create([15., 0., -37.]), vec3.create([-15., -1., -37.])];
-var obj_default_rotate = [vec3.create([0., 0., -0.]), vec3.create([-90., 0., -50.]), vec3.create([-90., 0., -50.])];
-var obj_default_scale = [vec3.create([0.2, 0.2, 0.2]), vec3.create([2., 2., 2.]), vec3.create([5., 5., 5.])];
+var obj_default_rotate = [vec3.create([0., 0., -0.]), vec3.create([225., 15., 0.]), vec3.create([-90., 0., -50.])];
+var obj_default_scale = [vec3.create([0.2, 0.2, 0.2]), vec3.create([0.2, 0.2, 0.2]), vec3.create([7., 7., 7.])];
 var obj_default_shear = vec3.create([90., 90., 90.]);
 // light parameters
 var light_locations = new Float32Array([0., 5., -10., 17., 5., -17., -17., 5., -17.]);
