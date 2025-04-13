@@ -39,7 +39,7 @@
         }
         if(shading_mode[0] == 2.){
             // TODO: phong shading
-            gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+            gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
         }
     }
     </script>
@@ -421,7 +421,11 @@
     <p style="position: absolute; left: 1%; top: 1%; max-width: 30%; min-width: 30%; ">
 
     <p>
-        <label for="shading">Gouraud shading</label>
+        <select id="shading" oninput="update_mode()">
+            <option value="0">Flat shading</option>
+            <option value="1">Gouraud shading</option>
+            <option value="2">Phong shading</option>
+        </select>
     </p>
 
     </br>
