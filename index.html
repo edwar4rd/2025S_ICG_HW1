@@ -16,18 +16,23 @@
     precision mediump float;
 
     in vec3 shading_mode;
-    in vec3 vertexColor;
-    in vec3 fragPosition;
-    in vec3 fragNormal;
-    in vec3 lightLocations[3];
-    in vec3 lightColors[3];
-    in vec3 lightKdKsCDs[3];
-    in float Ka_val;
-    in vec3 ambient_lightColor;
 
-    in vec4 fragcolor;   // for gouraud shading
+    // for flat shading
     flat in vec4 flatcolor;
     
+    // for gouraud shading
+    in vec4 fragcolor;
+    
+    // for phong shading
+    // in vec3 vertexColor;
+    // in vec3 fragPosition;
+    // in vec3 fragNormal;
+    // in vec3 lightLocations[3];
+    // in vec3 lightColors[3];
+    // in vec3 lightKdKsCDs[3];
+    // in float Ka_val;
+    // in vec3 ambient_lightColor;
+
     out vec4 outputColor;
 
     void main(void) {
@@ -68,19 +73,25 @@
     uniform vec3 ambient_color;
     
     uniform int mode;
-
-    out vec3 vertexColor;
-    out vec3 fragPosition;
-    out vec3 fragNormal;
+    
     out vec3 shading_mode;
-    out vec3 lightLocations[3];
-    out vec3 lightColors[3];
-    out vec3 lightKdKsCDs[3];
-    out float Ka_val;
-    out vec3 ambient_lightColor;
 
-    out vec4 fragcolor;
+    // for flat shading
     flat out vec4 flatcolor;
+    
+    // for gouraud shading
+    out vec4 fragcolor;
+
+    // for phong shading
+    // out vec3 vertexColor;
+    // out vec3 fragPosition;
+    // out vec3 fragNormal;
+    // out vec3 lightLocations[3];
+    // out vec3 lightColors[3];
+    // out vec3 lightKdKsCDs[3];
+    // out float Ka_val;
+    // out vec3 ambient_lightColor;
+    
 
     vec3 shading(vec3 vertex) {
         vec3 phong = vec3(0., 0., 0.);
@@ -113,14 +124,6 @@
     }
 
     void main(void) {
-        Ka_val = Ka;
-        ambient_lightColor = ambient_color;
-        for(int i=0; i<3 ; ++i){
-            lightLocations[i] = lightLoc[i];
-            lightColors[i] = lightColor[i];
-            lightKdKsCDs[i] = lightKdKsCD[i];
-        }
-        
         shading_mode = vec3(mode);
 
         vec3 vertex_copy = aVertexPosition;
@@ -137,7 +140,14 @@
 
         if(mode == 2) {
             // TODO: phong shading
-            fragcolor = vec4(1.0, 1.0, 1.0, 1.0);
+            
+            // Ka_val = Ka;
+            // ambient_lightColor = ambient_color;
+            // for(int i=0; i<3 ; ++i){
+            //     lightLocations[i] = lightLoc[i];
+            //     lightColors[i] = lightColor[i];
+            //     lightKdKsCDs[i] = lightKdKsCD[i];
+            // }
         }
 
         gl_Position = uPMatrix * uMVMatrix * vec4(vertex_copy, 1.0);
