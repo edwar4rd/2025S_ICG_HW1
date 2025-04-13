@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use eframe::egui_glow;
-use egui::mutex::Mutex;
+use egui::{mutex::Mutex, Checkbox, Slider};
 use egui_glow::glow;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct DemoApp {
+    ambient: [f32; 3],
+    rotation_enabled: bool,
     #[serde(skip)]
-    rotating_triangles: Arc<Mutex<Vec<RotatingTriangle>>>,
+    gl_stuff: Arc<Mutex<Option<GLStuff>>>,
     angle: f32,
 }
 
@@ -28,7 +30,7 @@ impl DemoApp {
 
         let gl = cc.gl.as_ref()?;
 
-        value.rotating_triangles = Arc::new(Mutex::new(vec![RotatingTriangle::new(gl)?]));
+        value.gl_stuff = Arc::new(Mutex::new(Some(GLStuff::new(gl)?)));
         Some(value)
     }
 }
@@ -41,6 +43,11 @@ impl eframe::App for DemoApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let dt = ctx.input(|i| i.unstable_dt);
+        if self.rotation_enabled {
+            self.angle += 1.0 * dt;
+            ctx.request_repaint();
+        }
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
@@ -65,14 +72,21 @@ impl eframe::App for DemoApp {
             });
         });
 
-        egui::Window::new("Settings")
-            .vscroll(true)
-            .show(ctx, |ui| {
-                    ui.add(egui::github_link_file!(
-                    "https://github.com/edwar4rd/2025S_ICG_HW1/",
-                    "Source code."
-                ));
-            });
+        egui::Window::new("Settings").vscroll(true).show(ctx, |ui| {
+            ui.heading("Rotation");
+            ui.add(Checkbox::new(&mut self.rotation_enabled, "Enabled"));
+            ui.separator();
+
+            ui.heading("Ambient Light");
+            ui.add(Slider::new(&mut self.ambient[0], 0.0..=1.0).text("Red"));
+            ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
+            ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
+
+            ui.add(egui::github_link_file!(
+                "https://github.com/edwar4rd/2025S_ICG_HW1/",
+                "Source code."
+            ));
+        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::canvas(ui.style()).show(ui, |ui| {
@@ -87,9 +101,7 @@ impl eframe::App for DemoApp {
 
     fn on_exit(&mut self, gl: Option<&glow::Context>) {
         if let Some(gl) = gl {
-            for triangle in self.rotating_triangles.lock().iter() {
-                triangle.destroy(gl);
-            }
+            self.gl_stuff.lock().as_ref().map(|stuff| stuff.destroy(gl));
         }
     }
 }
@@ -118,12 +130,10 @@ impl DemoApp {
 
         // Clone locals so we can move them into the paint callback:
         let angle = self.angle;
-        let rotating_triangles = self.rotating_triangles.clone();
+        let gl_stuff = self.gl_stuff.clone();
 
         let cb = egui_glow::CallbackFn::new(move |_info, painter| {
-            for triangle in rotating_triangles.lock().iter() {
-                triangle.paint(painter.gl(), angle);
-            }
+            gl_stuff.lock().as_ref().map(|stuff| stuff.paint(painter.gl(), angle));
         });
 
         let callback = egui::PaintCallback {
@@ -134,13 +144,13 @@ impl DemoApp {
     }
 }
 
-struct RotatingTriangle {
+struct GLStuff {
     program: glow::Program,
     vertex_array: glow::VertexArray,
 }
 
 #[allow(unsafe_code)] // we need unsafe code to use glow
-impl RotatingTriangle {
+impl GLStuff {
     fn new(gl: &glow::Context) -> Option<Self> {
         use glow::HasContext as _;
 
