@@ -21,15 +21,9 @@ impl DemoApp {
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         let mut value: DemoApp = if let Some(storage) = cc.storage {
-            eframe::get_value(storage, eframe::APP_KEY).unwrap_or(DemoApp {
-                rotating_triangles: Arc::new(Mutex::new(Vec::new())),
-                angle: 0.0,
-            })
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
-            DemoApp {
-                rotating_triangles: Arc::new(Mutex::new(Vec::new())),
-                angle: 0.0,
-            }
+            DemoApp::default()
         };
 
         let gl = cc.gl.as_ref()?;
@@ -65,25 +59,25 @@ impl eframe::App for DemoApp {
                     ui.add_space(16.0);
                 }
 
+                ui.heading("2025S ICG Homework #1");
+                ui.add_space(50.);
                 egui::widgets::global_theme_preference_buttons(ui);
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("2025S ICG Homework #1");
+        egui::Window::new("Settings")
+            .vscroll(true)
+            .show(ctx, |ui| {
+                    ui.add(egui::github_link_file!(
+                    "https://github.com/edwar4rd/2025S_ICG_HW1/",
+                    "Source code."
+                ));
+            });
 
+        egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::canvas(ui.style()).show(ui, |ui| {
                 self.custom_painting(ui);
             });
-
-            ui.separator();
-
-            ui.add(egui::github_link_file!(
-                "https://github.com/edwar4rd/2025S_ICG_HW1/",
-                "Source code."
-            ));    
-
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 powered_by_egui_and_eframe(ui);
                 egui::warn_if_debug_build(ui);
@@ -117,7 +111,8 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
 impl DemoApp {
     fn custom_painting(&mut self, ui: &mut egui::Ui) {
         let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(300.0), egui::Sense::drag());
+            // ui.allocate_exact_size(egui::Vec2::splat(300.0), egui::Sense::drag());
+        ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
 
         self.angle += response.drag_motion().x * 0.01;
 
