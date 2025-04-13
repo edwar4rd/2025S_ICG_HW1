@@ -55,19 +55,22 @@ vec3 shading(vec3 mvVertex, vec3 mvNormal) {
 }
 
 void main(void) {
-    if(shading_mode[0] == 0.) {
+    if(shading_mode[0] == 0.f) {
         // flat shading
         outputColor = flatcolor;
     }
-    if(shading_mode[0] == 1.) {
+    if(shading_mode[0] == 1.f) {
         // gouraud shading
         outputColor = fragcolor;
     }
-    if(shading_mode[0] == 2.) {
-        outputColor = vec4(shading(fragPosition, fragNormal), 1.0);
+    if(shading_mode[0] == 2.f) {
+        outputColor = vec4(shading(fragPosition, fragNormal), 1.0f);
     }
-    if(shading_mode[0] == 3.) {
+    if(shading_mode[0] == 3.f) {
         vec3 normal = cross(dFdx(fragPosition), dFdy(fragPosition));
-        outputColor = vec4(shading(fragPosition, normal), 1.0);
+        outputColor = vec4(shading(fragPosition, normal), 1.0f);
+    }
+    if(shading_mode[0] == 4.f) {
+        outputColor = vec4(vec3(0.6f, 0.4f, 0.9f) * (ceil((shading(fragPosition, fragNormal).x) * 5.0f) / 5.0f), 1.0f);
     }
 }
