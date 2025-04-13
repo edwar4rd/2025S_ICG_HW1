@@ -86,7 +86,7 @@ void main(void) {
         fragcolor = vec4(shading(vertex_copy), 1.0f);
     }
 
-    if(mode == 2) {
+    if(mode == 2 || mode == 3)  {
         // phong shading
         vertexColor = aFrontColor;
         fragPosition = (uMVMatrix * vec4(vertex_copy, 1.0f)).xyz;

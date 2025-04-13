@@ -26,10 +26,8 @@ in vec3 ambient_lightColor;
 
 out vec4 outputColor;
 
-vec3 shading() {
+vec3 shading(vec3 mvVertex, vec3 mvNormal) {
     vec3 phong = vec3(0.f, 0.f, 0.f);
-    vec3 mvVertex = fragPosition;
-    vec3 mvNormal = fragNormal;
 
     float ka = Ka_val;
     vec3 V = -normalize(mvVertex);
@@ -66,6 +64,10 @@ void main(void) {
         outputColor = fragcolor;
     }
     if(shading_mode[0] == 2.) {
-        outputColor = vec4(shading(), 1.0);
+        outputColor = vec4(shading(fragPosition, fragNormal), 1.0);
+    }
+    if(shading_mode[0] == 3.) {
+        vec3 normal = cross(dFdx(fragPosition), dFdy(fragPosition));
+        outputColor = vec4(shading(fragPosition, normal), 1.0);
     }
 }
