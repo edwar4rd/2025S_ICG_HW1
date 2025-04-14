@@ -244,9 +244,9 @@ impl eframe::App for DemoApp {
                     });
 
                 ui.collapsing("Scale", |ui| {
-                    ui.add(Slider::new(&mut selected_obj.scale[0], 0.0..=10.0).text("Scale.x"));
-                    ui.add(Slider::new(&mut selected_obj.scale[1], 0.0..=10.0).text("Scale.y"));
-                    ui.add(Slider::new(&mut selected_obj.scale[2], 0.0..=10.0).text("Scale.z"));
+                    ui.add(Slider::new(&mut selected_obj.scale[0], 0.01..=10.0).text("Scale.x"));
+                    ui.add(Slider::new(&mut selected_obj.scale[1], 0.01..=10.0).text("Scale.y"));
+                    ui.add(Slider::new(&mut selected_obj.scale[2], 0.01..=10.0).text("Scale.z"));
                     if ui.button("Reset Scale").clicked() {
                         selected_obj.scale = vec3(1., 1., 1.);
                     }
@@ -416,6 +416,7 @@ struct GLStuff {
     program: glow::Program,
     vertex_array: VertexArray,
     pos_buffer: Buffer,
+    item_count: i32
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -493,6 +494,9 @@ impl GLStuff {
                 gl.delete_shader(shader);
             }
 
+            let teapot_json = include_str!("../model/Teapot.json");
+            let teapot_json: ICGJson = serde_json::from_str(teapot_json).unwrap();
+
             let vertex_array = gl.create_vertex_array().unwrap();
 
             gl.bind_vertex_array(Some(vertex_array));
@@ -500,7 +504,7 @@ impl GLStuff {
             gl.enable_vertex_attrib_array(verts_loc);
             let pos_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
-            let data: &[f32] = &[0., 1., 0., -1., -1., 0., 1., -1., 0.];
+            let data: &[f32] = &teapot_json.vertex_positions;
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 bytemuck::cast_slice(data),
@@ -512,6 +516,7 @@ impl GLStuff {
                 program,
                 vertex_array,
                 pos_buffer,
+                item_count: (teapot_json.vertex_positions.len() / 3) as i32,
             })
         }
     }
@@ -535,8 +540,8 @@ impl GLStuff {
     fn paint(&self, gl: &glow::Context, width: i32, height: i32, scene_data: Arc<SceneData>, intermediate_fbo: Option<glow::Framebuffer>) {
         use glow::HasContext as _;
         let perspective_mat =
-            Mat4::perspective_rh_gl(45f32.to_radians(), width as f32 / height as f32, 0.1, 100.0)
-                * Mat4::from_translation(vec3(0., 0., -10.));
+            Mat4::perspective_rh_gl(45f32, width as f32 / height as f32, 0.1, 100.0)
+                * Mat4::from_translation(vec3(0., 0., -25.));
 
         unsafe {
             
@@ -568,7 +573,7 @@ impl GLStuff {
                 gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
                 gl.vertex_attrib_pointer_f32(verts_loc, 3, glow::FLOAT, false, 0, 0);
-                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                gl.draw_arrays(glow::TRIANGLES, 0, self.item_count);
                 gl.bind_vertex_array(Some(bound_vao));
             }
 

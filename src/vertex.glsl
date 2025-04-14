@@ -8,6 +8,6 @@ uniform mat4 uMVMatrix;
 
 out vec4 v_color;
 void main() {
-    v_color = colors[gl_VertexID];
+    v_color = colors[gl_VertexID % 3];
     gl_Position = uPMatrix * uMVMatrix * vec4(verts, 1.0);
 }
