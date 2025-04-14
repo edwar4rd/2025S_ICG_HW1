@@ -615,9 +615,13 @@ impl GLStuff {
                 scene_data.ambient_ka,
             );
 
-            let vertex_position_loc = gl.get_attrib_location(self.program, "aVertexPosition").unwrap();
+            let vertex_position_loc = gl
+                .get_attrib_location(self.program, "aVertexPosition")
+                .unwrap();
             let front_color_loc = gl.get_attrib_location(self.program, "aFrontColor").unwrap();
-            let vertex_normal_loc = gl.get_attrib_location(self.program, "aVertexNormal").unwrap();
+            let vertex_normal_loc = gl
+                .get_attrib_location(self.program, "aVertexNormal")
+                .unwrap();
 
             for obj in scene_data.objs.iter() {
                 gl.uniform_matrix_4_f32_slice(
@@ -642,7 +646,7 @@ impl GLStuff {
                 gl.vertex_attrib_pointer_f32(front_color_loc, 3, glow::FLOAT, false, 0, 0);
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.norm_buffer));
                 gl.vertex_attrib_pointer_f32(vertex_normal_loc, 3, glow::FLOAT, false, 0, 0);
-                
+
                 gl.draw_arrays(glow::TRIANGLES, 0, self.item_count);
                 gl.bind_vertex_array(Some(bound_vao));
             }
