@@ -1,17 +1,82 @@
 use std::sync::Arc;
 
 use eframe::egui_glow;
-use egui::{mutex::Mutex, Checkbox, Slider};
+use egui::{mutex::Mutex, Checkbox, RichText, Slider};
 use egui_glow::glow;
+use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
+
+#[derive(
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Deserialize,
+    serde::Serialize,
+    Default,
+    IntoStaticStr,
+    EnumIter,
+)]
+enum RenderingMode {
+    Flat = 0,
+    Gouraud,
+    #[default]
+    Phong,
+    FakeFlat,
+    Cartoon,
+}
+
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+struct CGObject {
+    name: String,
+    translation: [f32; 3],
+    rotation: [f32; 3],
+    rotating: [f32; 3],
+    scale: [f32; 3],
+    shear: [f32; 3],
+    rendering_mode: RenderingMode,
+    json_url: String,
+}
+
+impl Default for CGObject {
+    fn default() -> Self {
+        Self {
+            name: "Object".into(),
+            translation: Default::default(),
+            rotation: Default::default(),
+            rotating: Default::default(),
+            scale: [1., 1., 1.],
+            shear: [90., 90., 90.],
+            rendering_mode: Default::default(),
+            json_url: Default::default(),
+        }
+    }
+}
+
+impl CGObject {
+    fn tick_animation(&mut self, dt: f32) {
+        for i in 0..3 {
+            self.rotation[i] += self.rotating[i] * dt;
+            if self.rotation[i] > 180. {
+                self.rotation[i] -= 360.;
+            };
+            if self.rotation[i] < -180. {
+                self.rotation[i] += 360.;
+            };
+        }
+    }
+}
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct DemoApp {
     ambient: [f32; 3],
     rotation_enabled: bool,
+    selected_object: Option<usize>,
+    angle: f32,
+    objects: Vec<CGObject>,
+    dummy_object: CGObject,
     #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
-    angle: f32,
 }
 
 impl DemoApp {
@@ -46,6 +111,9 @@ impl eframe::App for DemoApp {
         let dt = ctx.input(|i| i.unstable_dt);
         if self.rotation_enabled {
             self.angle += 1.0 * dt;
+            for obj in &mut self.objects {
+                obj.tick_animation(dt);
+            }
             ctx.request_repaint();
         }
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
@@ -81,6 +149,143 @@ impl eframe::App for DemoApp {
             ui.add(Slider::new(&mut self.ambient[0], 0.0..=1.0).text("Red"));
             ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
             ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
+            ui.separator();
+
+            ui.heading("Objects");
+            ui.horizontal(|ui| {
+                if ui.button("New Object").clicked() {
+                    let mut new_obj = self.dummy_object.clone();
+                    new_obj.name = format!("Object{:02}", self.objects.len());
+                    self.objects.push(new_obj);
+                    if self.selected_object == None {
+                        self.selected_object = Some(self.objects.len() - 1);
+                    }
+                }
+
+                if ui
+                    .button(RichText::new("Clear Objects").color(egui::Color32::RED))
+                    .clicked()
+                {
+                    self.objects.clear();
+                    self.selected_object = None;
+
+                    // GL Stuff cleanup?
+                }
+            });
+            ui.add_space(10.);
+
+            egui::ComboBox::new("obj", "Selected Object")
+                .selected_text(
+                    self.selected_object
+                        .and_then(|obj_id| self.objects.get(obj_id))
+                        .and_then(|obj| Some(obj.name.as_str()))
+                        .unwrap_or("None"),
+                )
+                .show_ui(ui, |ui| {
+                    for (id, obj) in self.objects.iter().enumerate() {
+                        ui.selectable_value(&mut self.selected_object, Some(id), &obj.name);
+                    }
+                });
+
+            {
+                let selected = self.selected_object.is_some();
+                let selected_obj = self
+                    .selected_object
+                    .and_then(|obj_id| self.objects.get_mut(obj_id))
+                    .and_then(|obj| Some(obj))
+                    .unwrap_or(&mut self.dummy_object);
+
+                if selected {
+                    ui.text_edit_singleline(&mut selected_obj.name);
+                } else {
+                    ui.label("None Selected");
+                }
+
+                egui::ComboBox::new("obj_mode", "Mode")
+                    .selected_text(Into::<&'static str>::into(selected_obj.rendering_mode))
+                    .show_ui(ui, |ui| {
+                        for mode in RenderingMode::iter() {
+                            ui.selectable_value(
+                                &mut selected_obj.rendering_mode,
+                                mode,
+                                Into::<&'static str>::into(mode),
+                            );
+                        }
+                    });
+
+                ui.collapsing("Scale", |ui| {
+                    ui.add(Slider::new(&mut selected_obj.scale[0], 0.0..=10.0).text("Scale.x"));
+                    ui.add(Slider::new(&mut selected_obj.scale[1], 0.0..=10.0).text("Scale.y"));
+                    ui.add(Slider::new(&mut selected_obj.scale[2], 0.0..=10.0).text("Scale.z"));
+                    if ui.button("Reset Scale").clicked() {
+                        selected_obj.scale = [1., 1., 1.];
+                    }
+                });
+
+                ui.collapsing("Translation", |ui| {
+                    ui.add(
+                        Slider::new(&mut selected_obj.translation[0], -10.0..=10.0)
+                            .text("Translation.x"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.translation[1], -10.0..=10.0)
+                            .text("Translation.y"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.translation[2], -10.0..=10.0)
+                            .text("Translation.z"),
+                    );
+                    if ui.button("Reset Translation").clicked() {
+                        selected_obj.translation = [0., 0., 0.];
+                    }
+                });
+                ui.collapsing("Rotation", |ui| {
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotation[0], -180.0..=180.0)
+                            .text("Rotation.x"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotation[1], -180.0..=180.0)
+                            .text("Rotation.y"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotation[2], -180.0..=180.0)
+                            .text("Rotation.z"),
+                    );
+                    if ui.button("Reset Rotation").clicked() {
+                        selected_obj.rotation = [0., 0., 0.];
+                    }
+                });
+                ui.collapsing("Shear", |ui| {
+                    ui.add(Slider::new(&mut selected_obj.shear[0], 0.0..=180.0).text("Shear.x"));
+                    ui.add(Slider::new(&mut selected_obj.shear[1], 0.0..=180.0).text("Shear.y"));
+                    ui.add(Slider::new(&mut selected_obj.shear[2], 0.0..=180.0).text("Shear.z"));
+
+                    if ui.button("Reset Shear").clicked() {
+                        selected_obj.shear = [90., 90., 90.];
+                    }
+                });
+                ui.collapsing("Animation", |ui| {
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotating[0], -360.0..=360.0)
+                            .text("Rotating.x"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotating[1], -360.0..=360.0)
+                            .text("Rotating.y"),
+                    );
+                    ui.add(
+                        Slider::new(&mut selected_obj.rotating[2], -360.0..=360.0)
+                            .text("Rotating.z"),
+                    );
+
+                    if ui.button("Reset Animation").clicked() {
+                        selected_obj.rotating = [0., 0., 0.];
+                    }
+                });
+            }
+
+            ui.separator();
 
             ui.add(egui::github_link_file!(
                 "https://github.com/edwar4rd/2025S_ICG_HW1/",
@@ -132,8 +337,14 @@ impl DemoApp {
         let angle = self.angle;
         let gl_stuff = self.gl_stuff.clone();
 
-        let cb = egui_glow::CallbackFn::new(move |_info, painter| {
-            gl_stuff.lock().as_ref().map(|stuff| stuff.paint(painter.gl(), angle));
+        let cb = egui_glow::CallbackFn::new(move |info, painter| {
+            let width = info.clip_rect_in_pixels().width_px;
+            let height = info.clip_rect_in_pixels().height_px;
+
+            gl_stuff
+                .lock()
+                .as_ref()
+                .map(|stuff| stuff.paint(painter.gl(), angle, width, height));
         });
 
         let callback = egui::PaintCallback {
@@ -167,10 +378,8 @@ impl GLStuff {
                 return None;
             }
 
-            let (vertex_shader_source, fragment_shader_source) = (
-                include_str!("vertex.glsl"),
-                include_str!("fragment.glsl"),
-            );
+            let (vertex_shader_source, fragment_shader_source) =
+                (include_str!("vertex.glsl"), include_str!("fragment.glsl"));
 
             let shader_sources = [
                 (glow::VERTEX_SHADER, vertex_shader_source),
@@ -234,9 +443,10 @@ impl GLStuff {
         }
     }
 
-    fn paint(&self, gl: &glow::Context, angle: f32) {
+    fn paint(&self, gl: &glow::Context, angle: f32, width: i32, height: i32) {
         use glow::HasContext as _;
         unsafe {
+            gl.viewport(0, 0, width, height);
             gl.use_program(Some(self.program));
             gl.uniform_1_f32(
                 gl.get_uniform_location(self.program, "u_angle").as_ref(),

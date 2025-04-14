@@ -1,9 +1,9 @@
-var cacheName = 'egui-template-pwa';
+var cacheName = 'icg-hw1-pwa';
 var filesToCache = [
   './',
   './index.html',
-  './icg_hw1.js',
-  './icg_hw1.wasm',
+  './icg-hw1.js',
+  // './icg-hw1_bg.wasm',
 ];
 
 /* Start the service worker and cache all of the app's content */
