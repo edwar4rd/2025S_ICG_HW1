@@ -500,9 +500,10 @@ impl GLStuff {
             gl.enable_vertex_attrib_array(verts_loc);
             let pos_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
+            let data: &[f32] = &[0., 1., 0., -1., -1., 0., 1., -1., 0.];
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(&[0., 1., 0., -1., -1., 0., 1., -1., 0.]),
+                bytemuck::cast_slice(data),
                 glow::STATIC_DRAW,
             );
             gl.bind_vertex_array(None);
@@ -540,6 +541,7 @@ impl GLStuff {
         unsafe {
             
             gl.use_program(Some(self.program));
+            gl.enable(glow::DEPTH_TEST);
 
             // gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
 
@@ -569,6 +571,8 @@ impl GLStuff {
                 gl.draw_arrays(glow::TRIANGLES, 0, 3);
                 gl.bind_vertex_array(Some(bound_vao));
             }
+
+            gl.disable(glow::DEPTH_TEST);
         }
     }
 }
