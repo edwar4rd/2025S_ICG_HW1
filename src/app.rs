@@ -91,7 +91,7 @@ impl CGObject {
             mv_mat: self.mv_matrix(),
             mode: self.rendering_mode as i32,
             // TODO: load json models
-            model_id: None,
+            _model_id: None,
         }
     }
 }
@@ -408,7 +408,7 @@ impl DemoApp {
 struct RenderedObject {
     mv_mat: Mat4,
     mode: i32,
-    model_id: Option<i32>,
+    _model_id: Option<i32>,
 }
 
 struct SceneData {
