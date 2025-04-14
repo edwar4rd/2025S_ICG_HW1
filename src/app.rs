@@ -1,21 +1,15 @@
 use std::sync::Arc;
 
-use eframe::egui_glow;
+use eframe::{
+    egui_glow::{self, glow},
+    glow::{Buffer, VertexArray},
+};
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
-use egui_glow::glow;
+use glam::{vec3, Mat4, Quat, Vec3};
+use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 
-#[derive(
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Deserialize,
-    serde::Serialize,
-    Default,
-    IntoStaticStr,
-    EnumIter,
-)]
+#[derive(Copy, Clone, PartialEq, Eq, Deserialize, Serialize, Default, IntoStaticStr, EnumIter)]
 enum RenderingMode {
     Flat = 0,
     Gouraud,
@@ -25,14 +19,14 @@ enum RenderingMode {
     Cartoon,
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 struct CGObject {
     name: String,
-    translation: [f32; 3],
-    rotation: [f32; 3],
-    rotating: [f32; 3],
-    scale: [f32; 3],
-    shear: [f32; 3],
+    translation: Vec3,
+    rotation: Vec3,
+    rotating: Vec3,
+    scale: Vec3,
+    shear: Vec3,
     rendering_mode: RenderingMode,
     json_url: String,
 }
@@ -44,8 +38,8 @@ impl Default for CGObject {
             translation: Default::default(),
             rotation: Default::default(),
             rotating: Default::default(),
-            scale: [1., 1., 1.],
-            shear: [90., 90., 90.],
+            scale: vec3(1., 1., 1.),
+            shear: vec3(90., 90., 90.),
             rendering_mode: Default::default(),
             json_url: Default::default(),
         }
@@ -64,15 +58,51 @@ impl CGObject {
             };
         }
     }
+
+    fn mv_matrix(&self) -> Mat4 {
+        Mat4::from_scale_rotation_translation(
+            self.scale,
+            Quat::from_rotation_x(self.rotation.x.to_radians())
+                * Quat::from_rotation_y(self.rotation.y.to_radians())
+                * Quat::from_rotation_z(self.rotation.z.to_radians()),
+            self.translation,
+        ) * Mat4::from_cols_array(&[
+            1.,
+            0.,
+            self.shear.z.to_radians().tan().recip(),
+            0.,
+            self.shear.x.to_radians().tan().recip(),
+            1.,
+            0.,
+            0.,
+            0.,
+            self.shear.y.to_radians().tan().recip(),
+            1.,
+            0.,
+            0.,
+            0.,
+            0.,
+            1.,
+        ])
+    }
+
+    fn to_rendered(&self) -> RenderedObject {
+        RenderedObject {
+            mv_mat: self.mv_matrix(),
+            mode: self.rendering_mode as i32,
+            // TODO: load json models
+            model_id: None,
+        }
+    }
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct DemoApp {
     ambient: [f32; 3],
+    ambient_ka: f32,
     rotation_enabled: bool,
     selected_object: Option<usize>,
-    angle: f32,
     objects: Vec<CGObject>,
     dummy_object: CGObject,
     #[serde(skip)]
@@ -110,7 +140,6 @@ impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let dt = ctx.input(|i| i.unstable_dt);
         if self.rotation_enabled {
-            self.angle += 1.0 * dt;
             for obj in &mut self.objects {
                 obj.tick_animation(dt);
             }
@@ -146,6 +175,7 @@ impl eframe::App for DemoApp {
             ui.separator();
 
             ui.heading("Ambient Light");
+            ui.add(Slider::new(&mut self.ambient_ka, 0.0..=1.0).text("Ka"));
             ui.add(Slider::new(&mut self.ambient[0], 0.0..=1.0).text("Red"));
             ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
             ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
@@ -218,7 +248,7 @@ impl eframe::App for DemoApp {
                     ui.add(Slider::new(&mut selected_obj.scale[1], 0.0..=10.0).text("Scale.y"));
                     ui.add(Slider::new(&mut selected_obj.scale[2], 0.0..=10.0).text("Scale.z"));
                     if ui.button("Reset Scale").clicked() {
-                        selected_obj.scale = [1., 1., 1.];
+                        selected_obj.scale = vec3(1., 1., 1.);
                     }
                 });
 
@@ -236,7 +266,7 @@ impl eframe::App for DemoApp {
                             .text("Translation.z"),
                     );
                     if ui.button("Reset Translation").clicked() {
-                        selected_obj.translation = [0., 0., 0.];
+                        selected_obj.translation = vec3(0., 0., 0.);
                     }
                 });
                 ui.collapsing("Rotation", |ui| {
@@ -253,7 +283,7 @@ impl eframe::App for DemoApp {
                             .text("Rotation.z"),
                     );
                     if ui.button("Reset Rotation").clicked() {
-                        selected_obj.rotation = [0., 0., 0.];
+                        selected_obj.rotation = vec3(0., 0., 0.);
                     }
                 });
                 ui.collapsing("Shear", |ui| {
@@ -262,7 +292,7 @@ impl eframe::App for DemoApp {
                     ui.add(Slider::new(&mut selected_obj.shear[2], 0.0..=180.0).text("Shear.z"));
 
                     if ui.button("Reset Shear").clicked() {
-                        selected_obj.shear = [90., 90., 90.];
+                        selected_obj.shear = vec3(90., 90., 90.);
                     }
                 });
                 ui.collapsing("Animation", |ui| {
@@ -280,7 +310,7 @@ impl eframe::App for DemoApp {
                     );
 
                     if ui.button("Reset Animation").clicked() {
-                        selected_obj.rotating = [0., 0., 0.];
+                        selected_obj.rotating = vec3(0., 0., 0.);
                     }
                 });
             }
@@ -326,16 +356,31 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
 }
 
 impl DemoApp {
-    fn custom_painting(&mut self, ui: &mut egui::Ui) {
-        let (rect, response) =
-            // ui.allocate_exact_size(egui::Vec2::splat(300.0), egui::Sense::drag());
-        ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+    fn get_scene_data(&self) -> SceneData {
+        SceneData {
+            objs: self.objects.iter().map(|obj| obj.to_rendered()).collect(),
+            ambient: self.ambient,
+            ambient_ka: self.ambient_ka,
+        }
+    }
 
-        self.angle += response.drag_motion().x * 0.01;
+    fn custom_painting(&mut self, ui: &mut egui::Ui) {
+        let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
+
+        {
+            let selected_obj = self
+                .selected_object
+                .and_then(|obj_id| self.objects.get_mut(obj_id))
+                .and_then(|obj| Some(obj))
+                .unwrap_or(&mut self.dummy_object);
+            selected_obj.translation.x += response.drag_motion().x * 0.01;
+            selected_obj.translation.y += response.drag_motion().y * -0.01;
+        }
 
         // Clone locals so we can move them into the paint callback:
-        let angle = self.angle;
+        // TODO: Optimize this
         let gl_stuff = self.gl_stuff.clone();
+        let scene_data = Arc::new(self.get_scene_data());
 
         let cb = egui_glow::CallbackFn::new(move |info, painter| {
             let width = info.clip_rect_in_pixels().width_px;
@@ -344,7 +389,7 @@ impl DemoApp {
             gl_stuff
                 .lock()
                 .as_ref()
-                .map(|stuff| stuff.paint(painter.gl(), angle, width, height));
+                .map(|stuff| stuff.paint(painter.gl(), width, height, scene_data.clone(), painter.intermediate_fbo()));
         });
 
         let callback = egui::PaintCallback {
@@ -355,9 +400,33 @@ impl DemoApp {
     }
 }
 
+struct RenderedObject {
+    mv_mat: Mat4,
+    mode: i32,
+    model_id: Option<i32>,
+}
+
+struct SceneData {
+    objs: Vec<RenderedObject>,
+    ambient: [f32; 3],
+    ambient_ka: f32,
+}
+
 struct GLStuff {
     program: glow::Program,
-    vertex_array: glow::VertexArray,
+    vertex_array: VertexArray,
+    pos_buffer: Buffer,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ICGJson {
+    vertex_positions: Vec<f32>,
+    vertex_normals: Vec<f32>,
+    vertex_frontcolors: Vec<f32>,
+    vertex_backcolors: Vec<f32>,
+    #[serde(default)]
+    vertex_texture_coords: Vec<f32>,
 }
 
 #[allow(unsafe_code)] // we need unsafe code to use glow
@@ -424,13 +493,24 @@ impl GLStuff {
                 gl.delete_shader(shader);
             }
 
-            let vertex_array = gl
-                .create_vertex_array()
-                .expect("Cannot create vertex array");
+            let vertex_array = gl.create_vertex_array().unwrap();
+
+            // let verts_loc = gl.get_attrib_location(program, "verts").unwrap();
+            // gl.enable_vertex_attrib_array(verts_loc);
+
+            let pos_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&[0., 1., 0., -1., -1., 0., 1., -1., 0.]),
+                glow::STATIC_DRAW,
+            );
+
 
             Some(Self {
                 program,
                 vertex_array,
+                pos_buffer,
             })
         }
     }
@@ -439,21 +519,55 @@ impl GLStuff {
         use glow::HasContext as _;
         unsafe {
             gl.delete_program(self.program);
-            gl.delete_vertex_array(self.vertex_array);
+            // if self.pos_buffer.is_some() {
+            gl.delete_buffer(self.pos_buffer);
+            // }
+            // if self.norm_buffer.is_some() {
+            //     gl.delete_buffer(self.norm_buffer.unwrap());
+            // }
+            // if self.color_buffer.is_some() {
+            //     gl.delete_buffer(self.color_buffer.unwrap());
+            // }
         }
     }
 
-    fn paint(&self, gl: &glow::Context, angle: f32, width: i32, height: i32) {
+    fn paint(&self, gl: &glow::Context, width: i32, height: i32, scene_data: Arc<SceneData>, intermediate_fbo: Option<glow::Framebuffer>) {
         use glow::HasContext as _;
+        let perspective_mat =
+            Mat4::perspective_rh_gl(45f32.to_radians(), width as f32 / height as f32, 0.1, 100.0)
+                * Mat4::from_translation(vec3(0., 0., -10.));
+
         unsafe {
-            gl.viewport(0, 0, width, height);
+            
             gl.use_program(Some(self.program));
-            gl.uniform_1_f32(
-                gl.get_uniform_location(self.program, "u_angle").as_ref(),
-                angle,
+
+            // gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
+
+            let p_mat_loc = gl.get_uniform_location(self.program, "uPMatrix").unwrap();
+            let mv_mat_loc = gl.get_uniform_location(self.program, "uMVMatrix").unwrap();
+
+            gl.uniform_matrix_4_f32_slice(
+                Some(&p_mat_loc),
+                false,
+                &perspective_mat.to_cols_array(),
             );
-            gl.bind_vertex_array(Some(self.vertex_array));
-            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+
+            // let verts_loc = gl.get_attrib_location(self.program, "verts").unwrap();
+
+            for obj in scene_data.objs.iter() {
+                gl.uniform_matrix_4_f32_slice(
+                    Some(&mv_mat_loc),
+                    false,
+                    &obj.mv_mat.to_cols_array(),
+                );
+
+                // let bound = gl.get_parameter_buffer(glow::ARRAY_BUFFER_BINDING);
+                // gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
+                // gl.vertex_attrib_pointer_f32(verts_loc, 3, glow::FLOAT, false, 0, 0);
+                gl.bind_vertex_array(Some(self.vertex_array));
+                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                // gl.bind_buffer(glow::ARRAY_BUFFER, bound); 
+            }
         }
     }
 }
