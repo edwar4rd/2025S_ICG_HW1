@@ -50,7 +50,11 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(icg_hw1::DemoApp::new(cc).expect("Failed to build DemoApp")))),
+                Box::new(|cc| {
+                    Ok(Box::new(
+                        icg_hw1::DemoApp::new(cc).expect("Failed to build DemoApp"),
+                    ))
+                }),
             )
             .await;
 

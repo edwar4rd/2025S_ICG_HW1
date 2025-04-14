@@ -187,7 +187,7 @@ impl eframe::App for DemoApp {
                     let mut new_obj = self.dummy_object.clone();
                     new_obj.name = format!("Object{:02}", self.objects.len());
                     self.objects.push(new_obj);
-                    if self.selected_object == None {
+                    if self.selected_object.is_none() {
                         self.selected_object = Some(self.objects.len() - 1);
                     }
                 }
@@ -208,7 +208,7 @@ impl eframe::App for DemoApp {
                 .selected_text(
                     self.selected_object
                         .and_then(|obj_id| self.objects.get(obj_id))
-                        .and_then(|obj| Some(obj.name.as_str()))
+                        .map(|obj| obj.name.as_str())
                         .unwrap_or("None"),
                 )
                 .show_ui(ui, |ui| {
@@ -222,7 +222,6 @@ impl eframe::App for DemoApp {
                 let selected_obj = self
                     .selected_object
                     .and_then(|obj_id| self.objects.get_mut(obj_id))
-                    .and_then(|obj| Some(obj))
                     .unwrap_or(&mut self.dummy_object);
 
                 if selected {
@@ -336,7 +335,9 @@ impl eframe::App for DemoApp {
 
     fn on_exit(&mut self, gl: Option<&glow::Context>) {
         if let Some(gl) = gl {
-            self.gl_stuff.lock().as_ref().map(|stuff| stuff.destroy(gl));
+            if let Some(stuff) = self.gl_stuff.lock().as_ref() {
+                stuff.destroy(gl)
+            }
         }
     }
 }
@@ -371,7 +372,6 @@ impl DemoApp {
             let selected_obj = self
                 .selected_object
                 .and_then(|obj_id| self.objects.get_mut(obj_id))
-                .and_then(|obj| Some(obj))
                 .unwrap_or(&mut self.dummy_object);
             selected_obj.translation.x += response.drag_motion().x * 0.01;
             selected_obj.translation.y += response.drag_motion().y * -0.01;
@@ -386,7 +386,7 @@ impl DemoApp {
             let width = info.clip_rect_in_pixels().width_px;
             let height = info.clip_rect_in_pixels().height_px;
 
-            gl_stuff.lock().as_ref().map(|stuff| {
+            if let Some(stuff) = gl_stuff.lock().as_ref() {
                 stuff.paint(
                     painter.gl(),
                     width,
@@ -394,7 +394,7 @@ impl DemoApp {
                     scene_data.clone(),
                     painter.intermediate_fbo(),
                 )
-            });
+            }
         });
 
         let callback = egui::PaintCallback {
