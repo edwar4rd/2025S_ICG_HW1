@@ -7,7 +7,7 @@
 // NOTE:
 // if you want to write bonus part (texture mapping),
 // only Teapot.json has extra attribute "vertexTextureCoords"
-// which is used for texture mappping.
+// which is used for texture mapping.
 
 in vec3 aVertexPosition;
 in vec3 aFrontColor;

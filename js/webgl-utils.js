@@ -36,7 +36,7 @@
  *
  * Instead of setting up a context manually it is recommended to
  * use. This will check for success or failure. On failure it
- * will attempt to present an approriate message to the user.
+ * will attempt to present an appropriate message to the user.
  *
  *       gl = WebGLUtils.setupWebGL(canvas);
  *
@@ -60,7 +60,7 @@
 WebGLUtils = function() {
 
 /**
- * Creates the HTLM for a failure message
+ * Creates the HTML for a failure message
  * @param {string} canvasContainerId id of container of th
  *        canvas.
  * @return {string} The html.
@@ -76,7 +76,7 @@ var makeFailHTML = function(msg) {
 };
 
 /**
- * Mesasge for getting a webgl browser
+ * Messasge for getting a webgl browser
  * @type {string}
  */
 var GET_A_WEBGL_BROWSER = '' +
@@ -84,7 +84,7 @@ var GET_A_WEBGL_BROWSER = '' +
   '<a href="http://get.webgl.org">Click here to upgrade your browser.</a>';
 
 /**
- * Mesasge for need better hardware
+ * Messasge for need better hardware
  * @type {string}
  */
 var OTHER_PROBLEM = '' +
@@ -97,7 +97,7 @@ var OTHER_PROBLEM = '' +
  * tag to an error message with the correct links for WebGL.
  * @param {Element} canvas. The canvas element to create a
  *     context from.
- * @param {WebGLContextCreationAttirbutes} opt_attribs Any
+ * @param {WebGLContextCreationAttributes} opt_attribs Any
  *     creation attributes you want to pass in.
  * @param {function:(msg)} opt_onError An function to call
  *     if there is an error during creation.

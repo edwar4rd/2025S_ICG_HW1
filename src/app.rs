@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use eframe::{
     egui_glow::{self, glow},
-    glow::{Buffer, HasContext, VertexArray},
+    glow::{Buffer, VertexArray},
 };
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
 use glam::{vec3, Mat4, Quat, Vec3};
