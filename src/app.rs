@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use eframe::{
     egui_glow::{self, glow},
-    glow::{Buffer, VertexArray},
+    glow::{Buffer, HasContext, VertexArray},
 };
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
 use glam::{vec3, Mat4, Quat, Vec3};
@@ -495,9 +495,9 @@ impl GLStuff {
 
             let vertex_array = gl.create_vertex_array().unwrap();
 
-            // let verts_loc = gl.get_attrib_location(program, "verts").unwrap();
-            // gl.enable_vertex_attrib_array(verts_loc);
-
+            gl.bind_vertex_array(Some(vertex_array));
+            let verts_loc = gl.get_attrib_location(program, "verts").unwrap();
+            gl.enable_vertex_attrib_array(verts_loc);
             let pos_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
             gl.buffer_data_u8_slice(
@@ -505,7 +505,7 @@ impl GLStuff {
                 bytemuck::cast_slice(&[0., 1., 0., -1., -1., 0., 1., -1., 0.]),
                 glow::STATIC_DRAW,
             );
-
+            gl.bind_vertex_array(None);
 
             Some(Self {
                 program,
@@ -552,7 +552,7 @@ impl GLStuff {
                 &perspective_mat.to_cols_array(),
             );
 
-            // let verts_loc = gl.get_attrib_location(self.program, "verts").unwrap();
+            let verts_loc = gl.get_attrib_location(self.program, "verts").unwrap();
 
             for obj in scene_data.objs.iter() {
                 gl.uniform_matrix_4_f32_slice(
@@ -561,12 +561,13 @@ impl GLStuff {
                     &obj.mv_mat.to_cols_array(),
                 );
 
-                // let bound = gl.get_parameter_buffer(glow::ARRAY_BUFFER_BINDING);
-                // gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
-                // gl.vertex_attrib_pointer_f32(verts_loc, 3, glow::FLOAT, false, 0, 0);
+                let bound_vao = gl.get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING).unwrap();
                 gl.bind_vertex_array(Some(self.vertex_array));
+                gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
+                gl.vertex_attrib_pointer_f32(verts_loc, 3, glow::FLOAT, false, 0, 0);
                 gl.draw_arrays(glow::TRIANGLES, 0, 3);
-                // gl.bind_buffer(glow::ARRAY_BUFFER, bound); 
+                gl.bind_vertex_array(Some(bound_vao));
             }
         }
     }
