@@ -254,15 +254,15 @@ impl eframe::App for DemoApp {
 
                 ui.collapsing("Translation", |ui| {
                     ui.add(
-                        Slider::new(&mut selected_obj.translation[0], -10.0..=10.0)
+                        Slider::new(&mut selected_obj.translation[0], -20.0..=20.0)
                             .text("Translation.x"),
                     );
                     ui.add(
-                        Slider::new(&mut selected_obj.translation[1], -10.0..=10.0)
+                        Slider::new(&mut selected_obj.translation[1], -20.0..=20.0)
                             .text("Translation.y"),
                     );
                     ui.add(
-                        Slider::new(&mut selected_obj.translation[2], -10.0..=10.0)
+                        Slider::new(&mut selected_obj.translation[2], -20.0..=20.0)
                             .text("Translation.z"),
                     );
                     if ui.button("Reset Translation").clicked() {
@@ -386,10 +386,15 @@ impl DemoApp {
             let width = info.clip_rect_in_pixels().width_px;
             let height = info.clip_rect_in_pixels().height_px;
 
-            gl_stuff
-                .lock()
-                .as_ref()
-                .map(|stuff| stuff.paint(painter.gl(), width, height, scene_data.clone(), painter.intermediate_fbo()));
+            gl_stuff.lock().as_ref().map(|stuff| {
+                stuff.paint(
+                    painter.gl(),
+                    width,
+                    height,
+                    scene_data.clone(),
+                    painter.intermediate_fbo(),
+                )
+            });
         });
 
         let callback = egui::PaintCallback {
@@ -416,7 +421,9 @@ struct GLStuff {
     program: glow::Program,
     vertex_array: VertexArray,
     pos_buffer: Buffer,
-    item_count: i32
+    color_buffer: Buffer,
+    norm_buffer: Buffer,
+    item_count: i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -494,14 +501,20 @@ impl GLStuff {
                 gl.delete_shader(shader);
             }
 
-            let teapot_json = include_str!("../model/Teapot.json");
+            let teapot_json = include_str!("../model/Slider.json");
             let teapot_json: ICGJson = serde_json::from_str(teapot_json).unwrap();
 
             let vertex_array = gl.create_vertex_array().unwrap();
 
             gl.bind_vertex_array(Some(vertex_array));
-            let verts_loc = gl.get_attrib_location(program, "verts").unwrap();
-            gl.enable_vertex_attrib_array(verts_loc);
+
+            let vertex_position_loc = gl.get_attrib_location(program, "aVertexPosition").unwrap();
+            gl.enable_vertex_attrib_array(vertex_position_loc);
+            let front_color_loc = gl.get_attrib_location(program, "aFrontColor").unwrap();
+            gl.enable_vertex_attrib_array(front_color_loc);
+            let vertex_normal_loc = gl.get_attrib_location(program, "aVertexNormal").unwrap();
+            gl.enable_vertex_attrib_array(vertex_normal_loc);
+
             let pos_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
             let data: &[f32] = &teapot_json.vertex_positions;
@@ -510,12 +523,33 @@ impl GLStuff {
                 bytemuck::cast_slice(data),
                 glow::STATIC_DRAW,
             );
+
+            let color_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(color_buffer));
+            let data: &[f32] = &teapot_json.vertex_frontcolors;
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(data),
+                glow::STATIC_DRAW,
+            );
+
+            let norm_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(norm_buffer));
+            let data: &[f32] = &teapot_json.vertex_normals;
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(data),
+                glow::STATIC_DRAW,
+            );
+
             gl.bind_vertex_array(None);
 
             Some(Self {
                 program,
                 vertex_array,
                 pos_buffer,
+                color_buffer,
+                norm_buffer,
                 item_count: (teapot_json.vertex_positions.len() / 3) as i32,
             })
         }
@@ -525,26 +559,26 @@ impl GLStuff {
         use glow::HasContext as _;
         unsafe {
             gl.delete_program(self.program);
-            // if self.pos_buffer.is_some() {
             gl.delete_buffer(self.pos_buffer);
-            // }
-            // if self.norm_buffer.is_some() {
-            //     gl.delete_buffer(self.norm_buffer.unwrap());
-            // }
-            // if self.color_buffer.is_some() {
-            //     gl.delete_buffer(self.color_buffer.unwrap());
-            // }
+            gl.delete_buffer(self.color_buffer);
+            gl.delete_buffer(self.norm_buffer);
         }
     }
 
-    fn paint(&self, gl: &glow::Context, width: i32, height: i32, scene_data: Arc<SceneData>, intermediate_fbo: Option<glow::Framebuffer>) {
+    fn paint(
+        &self,
+        gl: &glow::Context,
+        width: i32,
+        height: i32,
+        scene_data: Arc<SceneData>,
+        intermediate_fbo: Option<glow::Framebuffer>,
+    ) {
         use glow::HasContext as _;
         let perspective_mat =
             Mat4::perspective_rh_gl(45f32, width as f32 / height as f32, 0.1, 100.0)
                 * Mat4::from_translation(vec3(0., 0., -25.));
 
         unsafe {
-            
             gl.use_program(Some(self.program));
             gl.enable(glow::DEPTH_TEST);
 
@@ -558,8 +592,32 @@ impl GLStuff {
                 false,
                 &perspective_mat.to_cols_array(),
             );
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "lightLoc").as_ref(),
+                &[0., 5., 5., 17., 5., -2., -17., 5., -2.],
+            );
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "lightColor").as_ref(),
+                &[1., 1., 1., 1., 1., 1., 1., 1., 1.],
+            );
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "lightKdKsCD")
+                    .as_ref(),
+                &[0.6, 0.3, 20.0, 0.6, 0.3, 20.0, 0.6, 0.3, 20.0],
+            );
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "ambient_color")
+                    .as_ref(),
+                &scene_data.ambient,
+            );
+            gl.uniform_1_f32(
+                gl.get_uniform_location(self.program, "Ka").as_ref(),
+                scene_data.ambient_ka,
+            );
 
-            let verts_loc = gl.get_attrib_location(self.program, "verts").unwrap();
+            let vertex_position_loc = gl.get_attrib_location(self.program, "aVertexPosition").unwrap();
+            let front_color_loc = gl.get_attrib_location(self.program, "aFrontColor").unwrap();
+            let vertex_normal_loc = gl.get_attrib_location(self.program, "aVertexNormal").unwrap();
 
             for obj in scene_data.objs.iter() {
                 gl.uniform_matrix_4_f32_slice(
@@ -568,11 +626,23 @@ impl GLStuff {
                     &obj.mv_mat.to_cols_array(),
                 );
 
-                let bound_vao = gl.get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING).unwrap();
+                gl.uniform_1_i32(
+                    gl.get_uniform_location(self.program, "mode").as_ref(),
+                    obj.mode,
+                );
+
+                let bound_vao = gl
+                    .get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING)
+                    .unwrap();
                 gl.bind_vertex_array(Some(self.vertex_array));
                 gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
-                gl.vertex_attrib_pointer_f32(verts_loc, 3, glow::FLOAT, false, 0, 0);
+                gl.vertex_attrib_pointer_f32(vertex_position_loc, 3, glow::FLOAT, false, 0, 0);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.color_buffer));
+                gl.vertex_attrib_pointer_f32(front_color_loc, 3, glow::FLOAT, false, 0, 0);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.norm_buffer));
+                gl.vertex_attrib_pointer_f32(vertex_normal_loc, 3, glow::FLOAT, false, 0, 0);
+                
                 gl.draw_arrays(glow::TRIANGLES, 0, self.item_count);
                 gl.bind_vertex_array(Some(bound_vao));
             }
