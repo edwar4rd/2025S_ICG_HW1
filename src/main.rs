@@ -15,6 +15,8 @@ fn main() -> eframe::Result {
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icon-256.png")[..])
                     .expect("Failed to load icon"),
             ),
+        depth_buffer: 24,
+        stencil_buffer: 8,
         ..Default::default()
     };
     eframe::run_native(

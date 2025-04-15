@@ -667,6 +667,7 @@ impl GLStuff {
         unsafe {
             gl.use_program(Some(self.program));
             gl.enable(glow::DEPTH_TEST);
+            gl.clear(glow::DEPTH_BUFFER_BIT);
 
             // gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
 
