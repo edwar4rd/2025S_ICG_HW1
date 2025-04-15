@@ -96,6 +96,28 @@ impl CGObject {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Default)]
+enum ModelState {
+    #[default]
+    Ready,
+    Loading,
+    Loaded,
+}
+
+/// We derive Deserialize/Serialize so we can persist app state on shutdown.
+#[derive(Deserialize, Serialize, Default)]
+struct CGModel {
+    source: String,
+    #[serde(skip)]
+    state: ModelState,
+}
+
+impl CGModel {
+    fn destroy(self, _gl_stuff: &Arc<Mutex<Option<GLStuff>>>) {
+        // TODO: tell gl to delete the model
+    }
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize, Default)]
 pub struct DemoApp {
@@ -105,6 +127,7 @@ pub struct DemoApp {
     selected_object: Option<usize>,
     objects: Vec<CGObject>,
     dummy_object: CGObject,
+    models: Vec<CGModel>,
     #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
 }
@@ -182,138 +205,11 @@ impl eframe::App for DemoApp {
             ui.separator();
 
             ui.heading("Objects");
-            ui.horizontal(|ui| {
-                if ui.button("New Object").clicked() {
-                    let mut new_obj = self.dummy_object.clone();
-                    new_obj.name = format!("Object{:02}", self.objects.len());
-                    self.objects.push(new_obj);
-                    if self.selected_object.is_none() {
-                        self.selected_object = Some(self.objects.len() - 1);
-                    }
-                }
+            self.object_settings(ui);
+            ui.separator();
 
-                if ui
-                    .button(RichText::new("Clear Objects").color(egui::Color32::RED))
-                    .clicked()
-                {
-                    self.objects.clear();
-                    self.selected_object = None;
-
-                    // GL Stuff cleanup?
-                }
-            });
-            ui.add_space(10.);
-
-            egui::ComboBox::new("obj", "Selected Object")
-                .selected_text(
-                    self.selected_object
-                        .and_then(|obj_id| self.objects.get(obj_id))
-                        .map(|obj| obj.name.as_str())
-                        .unwrap_or("None"),
-                )
-                .show_ui(ui, |ui| {
-                    for (id, obj) in self.objects.iter().enumerate() {
-                        ui.selectable_value(&mut self.selected_object, Some(id), &obj.name);
-                    }
-                });
-
-            {
-                let selected = self.selected_object.is_some();
-                let selected_obj = self
-                    .selected_object
-                    .and_then(|obj_id| self.objects.get_mut(obj_id))
-                    .unwrap_or(&mut self.dummy_object);
-
-                if selected {
-                    ui.text_edit_singleline(&mut selected_obj.name);
-                } else {
-                    ui.label("None Selected");
-                }
-
-                egui::ComboBox::new("obj_mode", "Mode")
-                    .selected_text(Into::<&'static str>::into(selected_obj.rendering_mode))
-                    .show_ui(ui, |ui| {
-                        for mode in RenderingMode::iter() {
-                            ui.selectable_value(
-                                &mut selected_obj.rendering_mode,
-                                mode,
-                                Into::<&'static str>::into(mode),
-                            );
-                        }
-                    });
-
-                ui.collapsing("Scale", |ui| {
-                    ui.add(Slider::new(&mut selected_obj.scale[0], 0.01..=10.0).text("Scale.x"));
-                    ui.add(Slider::new(&mut selected_obj.scale[1], 0.01..=10.0).text("Scale.y"));
-                    ui.add(Slider::new(&mut selected_obj.scale[2], 0.01..=10.0).text("Scale.z"));
-                    if ui.button("Reset Scale").clicked() {
-                        selected_obj.scale = vec3(1., 1., 1.);
-                    }
-                });
-
-                ui.collapsing("Translation", |ui| {
-                    ui.add(
-                        Slider::new(&mut selected_obj.translation[0], -20.0..=20.0)
-                            .text("Translation.x"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.translation[1], -20.0..=20.0)
-                            .text("Translation.y"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.translation[2], -20.0..=20.0)
-                            .text("Translation.z"),
-                    );
-                    if ui.button("Reset Translation").clicked() {
-                        selected_obj.translation = vec3(0., 0., 0.);
-                    }
-                });
-                ui.collapsing("Rotation", |ui| {
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotation[0], -180.0..=180.0)
-                            .text("Rotation.x"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotation[1], -180.0..=180.0)
-                            .text("Rotation.y"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotation[2], -180.0..=180.0)
-                            .text("Rotation.z"),
-                    );
-                    if ui.button("Reset Rotation").clicked() {
-                        selected_obj.rotation = vec3(0., 0., 0.);
-                    }
-                });
-                ui.collapsing("Shear", |ui| {
-                    ui.add(Slider::new(&mut selected_obj.shear[0], 0.0..=180.0).text("Shear.x"));
-                    ui.add(Slider::new(&mut selected_obj.shear[1], 0.0..=180.0).text("Shear.y"));
-                    ui.add(Slider::new(&mut selected_obj.shear[2], 0.0..=180.0).text("Shear.z"));
-
-                    if ui.button("Reset Shear").clicked() {
-                        selected_obj.shear = vec3(90., 90., 90.);
-                    }
-                });
-                ui.collapsing("Animation", |ui| {
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotating[0], -360.0..=360.0)
-                            .text("Rotating.x"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotating[1], -360.0..=360.0)
-                            .text("Rotating.y"),
-                    );
-                    ui.add(
-                        Slider::new(&mut selected_obj.rotating[2], -360.0..=360.0)
-                            .text("Rotating.z"),
-                    );
-
-                    if ui.button("Reset Animation").clicked() {
-                        selected_obj.rotating = vec3(0., 0., 0.);
-                    }
-                });
-            }
-
+            ui.heading("Models");
+            self.model_settings(ui);
             ui.separator();
 
             ui.add(egui::github_link_file!(
@@ -357,6 +253,196 @@ fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
 }
 
 impl DemoApp {
+    fn object_settings(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("New Object").clicked() {
+                let mut new_obj = self.dummy_object.clone();
+                new_obj.name = format!("Object{:02}", self.objects.len());
+                self.objects.push(new_obj);
+                if self.selected_object.is_none() {
+                    self.selected_object = Some(self.objects.len() - 1);
+                }
+            }
+
+            if ui
+                .button(RichText::new("Clear Objects").color(egui::Color32::RED))
+                .clicked()
+            {
+                self.objects.clear();
+                self.selected_object = None;
+            }
+        });
+        ui.add_space(10.);
+
+        egui::ComboBox::new("obj", "Selected Object")
+            .selected_text(
+                self.selected_object
+                    .and_then(|obj_id| self.objects.get(obj_id))
+                    .map(|obj| obj.name.as_str())
+                    .unwrap_or("None"),
+            )
+            .show_ui(ui, |ui| {
+                for (id, obj) in self.objects.iter().enumerate() {
+                    ui.selectable_value(&mut self.selected_object, Some(id), &obj.name);
+                }
+            });
+
+        {
+            let selected = self.selected_object.is_some();
+            let selected_obj = self
+                .selected_object
+                .and_then(|obj_id| self.objects.get_mut(obj_id))
+                .unwrap_or(&mut self.dummy_object);
+
+            if selected {
+                ui.text_edit_singleline(&mut selected_obj.name);
+            } else {
+                ui.label("None Selected");
+            }
+
+            egui::ComboBox::new("obj_mode", "Mode")
+                .selected_text(Into::<&'static str>::into(selected_obj.rendering_mode))
+                .show_ui(ui, |ui| {
+                    for mode in RenderingMode::iter() {
+                        ui.selectable_value(
+                            &mut selected_obj.rendering_mode,
+                            mode,
+                            Into::<&'static str>::into(mode),
+                        );
+                    }
+                });
+
+            ui.collapsing("Scale", |ui| {
+                ui.add(Slider::new(&mut selected_obj.scale[0], 0.01..=10.0).text("Scale.x"));
+                ui.add(Slider::new(&mut selected_obj.scale[1], 0.01..=10.0).text("Scale.y"));
+                ui.add(Slider::new(&mut selected_obj.scale[2], 0.01..=10.0).text("Scale.z"));
+                ui.horizontal(|ui| { 
+                    if ui.button("Make Uniform").clicked() {
+                        selected_obj.scale = selected_obj.scale.length()*Vec3::ONE/3f32.sqrt();
+                    }
+                    if ui.button("Reset Scale").clicked() {
+                        selected_obj.scale = vec3(1., 1., 1.);
+                    }
+                }) ;
+            });
+
+            ui.collapsing("Translation", |ui| {
+                ui.add(
+                    Slider::new(&mut selected_obj.translation[0], -20.0..=20.0)
+                        .text("Translation.x"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.translation[1], -20.0..=20.0)
+                        .text("Translation.y"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.translation[2], -20.0..=20.0)
+                        .text("Translation.z"),
+                );
+                if ui.button("Reset Translation").clicked() {
+                    selected_obj.translation = vec3(0., 0., 0.);
+                }
+            });
+            ui.collapsing("Rotation", |ui| {
+                ui.add(
+                    Slider::new(&mut selected_obj.rotation[0], -180.0..=180.0).text("Rotation.x"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.rotation[1], -180.0..=180.0).text("Rotation.y"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.rotation[2], -180.0..=180.0).text("Rotation.z"),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("X +90°").clicked() {
+                        selected_obj.rotation.x += 90.;
+                        if selected_obj.rotation.x > 180. {
+                            selected_obj.rotation.x -= 360.;
+                        }
+                    }
+                    if ui.button("Y +90°").clicked() {
+                        selected_obj.rotation.y += 90.;
+                        if selected_obj.rotation.y > 180. {
+                            selected_obj.rotation.y -= 360.;
+                        }
+                    }
+                    if ui.button("Z +90°").clicked() {
+                        selected_obj.rotation.z += 90.;
+                        if selected_obj.rotation.z > 180. {
+                            selected_obj.rotation.z -= 360.;
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("X +180°").clicked() {
+                        selected_obj.rotation.x += 180.;
+                        if selected_obj.rotation.x > 180. {
+                            selected_obj.rotation.x -= 360.;
+                        }
+                    }
+                    if ui.button("Y +180°").clicked() {
+                        selected_obj.rotation.y += 180.;
+                        if selected_obj.rotation.y > 180. {
+                            selected_obj.rotation.y -= 360.;
+                        }
+                    }
+                    if ui.button("Z +180°").clicked() {
+                        selected_obj.rotation.z += 180.;
+                        if selected_obj.rotation.z > 180. {
+                            selected_obj.rotation.z -= 360.;
+                        }
+                    }
+                });
+
+                if ui.button("Reset Rotation").clicked() {
+                    selected_obj.rotation = vec3(0., 0., 0.);
+                }
+            });
+            ui.collapsing("Shear", |ui| {
+                ui.add(Slider::new(&mut selected_obj.shear[0], 0.0..=180.0).text("Shear.x"));
+                ui.add(Slider::new(&mut selected_obj.shear[1], 0.0..=180.0).text("Shear.y"));
+                ui.add(Slider::new(&mut selected_obj.shear[2], 0.0..=180.0).text("Shear.z"));
+
+                if ui.button("Reset Shear").clicked() {
+                    selected_obj.shear = vec3(90., 90., 90.);
+                }
+            });
+            ui.collapsing("Animation", |ui| {
+                ui.add(
+                    Slider::new(&mut selected_obj.rotating[0], -360.0..=360.0).text("Rotating.x"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.rotating[1], -360.0..=360.0).text("Rotating.y"),
+                );
+                ui.add(
+                    Slider::new(&mut selected_obj.rotating[2], -360.0..=360.0).text("Rotating.z"),
+                );
+
+                if ui.button("Reset Animation").clicked() {
+                    selected_obj.rotating = vec3(0., 0., 0.);
+                }
+            });
+        }
+    }
+
+    fn model_settings(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("New Model").clicked() {
+            }
+
+            if ui
+                .button(RichText::new("Clear Models").color(egui::Color32::RED))
+                .clicked()
+            {
+                for model in self.models.drain(..) {
+                    if model.state == ModelState::Loaded {
+                        model.destroy(&self.gl_stuff);
+                    }
+                }
+            }
+        });
+    }
+
     fn get_scene_data(&self) -> SceneData {
         SceneData {
             objs: self.objects.iter().map(|obj| obj.to_rendered()).collect(),
