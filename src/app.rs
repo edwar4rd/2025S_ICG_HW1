@@ -480,7 +480,7 @@ impl DemoApp {
         ui.horizontal(|ui| {
             if ui.button("New Model").clicked() {
                 const URL_BASE: &'static str = if cfg!(target_arch = "wasm32") {
-                    ""
+                    "."
                 } else {
                     "https://edwar4rd.github.io/2025S_ICG_HW1"
                 };
