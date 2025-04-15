@@ -119,7 +119,7 @@ impl CGModel {
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(Deserialize, Serialize, Default)]
+#[derive(Deserialize, Serialize)]
 pub struct DemoApp {
     ambient: [f32; 3],
     ambient_ka: f32,
@@ -128,8 +128,27 @@ pub struct DemoApp {
     objects: Vec<CGObject>,
     dummy_object: CGObject,
     models: Vec<CGModel>,
+    camera_pos: Vec3,
+    fovy: f32,
     #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
+}
+
+impl Default for DemoApp {
+    fn default() -> Self {
+        Self {
+            ambient: Default::default(),
+            ambient_ka: Default::default(),
+            rotation_enabled: Default::default(),
+            selected_object: Default::default(),
+            objects: Default::default(),
+            dummy_object: Default::default(),
+            models: Default::default(),
+            camera_pos: vec3(0., 0., 25.),
+            fovy: 60f32,
+            gl_stuff: Default::default(),
+        }
+    }
 }
 
 impl DemoApp {
@@ -161,6 +180,27 @@ impl eframe::App for DemoApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.input(|i| {
+            if i.key_down(egui::Key::W) {
+                self.camera_pos.z -= 0.1;
+            }
+            if i.key_down(egui::Key::S) {
+                self.camera_pos.z += 0.1;
+            }
+            if i.key_down(egui::Key::A) {
+                self.camera_pos.x -= 0.1;
+            }
+            if i.key_down(egui::Key::D) {
+                self.camera_pos.x += 0.1;
+            }
+            if i.key_down(egui::Key::E) {
+                self.camera_pos.y += 0.1;
+            }
+            if i.key_down(egui::Key::Q) {
+                self.camera_pos.y -= 0.1;
+            }
+        });
+
         let dt = ctx.input(|i| i.unstable_dt);
         if self.rotation_enabled {
             for obj in &mut self.objects {
@@ -202,6 +242,13 @@ impl eframe::App for DemoApp {
             ui.add(Slider::new(&mut self.ambient[0], 0.0..=1.0).text("Red"));
             ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
             ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
+            ui.separator();
+
+            ui.heading("Camera");
+            ui.label(format!("x: {}", self.camera_pos.x));
+            ui.label(format!("y: {}", self.camera_pos.y));
+            ui.label(format!("z: {}", self.camera_pos.z));
+            ui.add(Slider::new(&mut self.fovy, 0.0..=180.).text("fov"));
             ui.separator();
 
             ui.heading("Objects");
@@ -316,14 +363,14 @@ impl DemoApp {
                 ui.add(Slider::new(&mut selected_obj.scale[0], 0.01..=10.0).text("Scale.x"));
                 ui.add(Slider::new(&mut selected_obj.scale[1], 0.01..=10.0).text("Scale.y"));
                 ui.add(Slider::new(&mut selected_obj.scale[2], 0.01..=10.0).text("Scale.z"));
-                ui.horizontal(|ui| { 
+                ui.horizontal(|ui| {
                     if ui.button("Make Uniform").clicked() {
-                        selected_obj.scale = selected_obj.scale.length()*Vec3::ONE/3f32.sqrt();
+                        selected_obj.scale = selected_obj.scale.length() * Vec3::ONE / 3f32.sqrt();
                     }
                     if ui.button("Reset Scale").clicked() {
                         selected_obj.scale = vec3(1., 1., 1.);
                     }
-                }) ;
+                });
             });
 
             ui.collapsing("Translation", |ui| {
@@ -427,8 +474,7 @@ impl DemoApp {
 
     fn model_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("New Model").clicked() {
-            }
+            if ui.button("New Model").clicked() {}
 
             if ui
                 .button(RichText::new("Clear Models").color(egui::Color32::RED))
@@ -448,6 +494,8 @@ impl DemoApp {
             objs: self.objects.iter().map(|obj| obj.to_rendered()).collect(),
             ambient: self.ambient,
             ambient_ka: self.ambient_ka,
+            camera_pos: self.camera_pos,
+            fovy: self.fovy,
         }
     }
 
@@ -501,6 +549,8 @@ struct SceneData {
     objs: Vec<RenderedObject>,
     ambient: [f32; 3],
     ambient_ka: f32,
+    camera_pos: Vec3,
+    fovy: f32,
 }
 
 struct GLStuff {
@@ -660,9 +710,12 @@ impl GLStuff {
         intermediate_fbo: Option<glow::Framebuffer>,
     ) {
         use glow::HasContext as _;
-        let perspective_mat =
-            Mat4::perspective_rh_gl(45f32, width as f32 / height as f32, 0.1, 100.0)
-                * Mat4::from_translation(vec3(0., 0., -25.));
+        let perspective_mat = Mat4::perspective_rh_gl(
+            scene_data.fovy.to_radians(),
+            width as f32 / height as f32,
+            0.1,
+            100.0,
+        ) * Mat4::from_translation(-scene_data.camera_pos);
 
         unsafe {
             gl.use_program(Some(self.program));
