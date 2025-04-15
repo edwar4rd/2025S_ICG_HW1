@@ -6,6 +6,7 @@ use eframe::{
 };
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
 use glam::{vec3, Mat4, Quat, Vec3};
+use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator, IntoStaticStr};
 
@@ -131,6 +132,8 @@ pub struct DemoApp {
     camera_pos: Vec3,
     fovy: f32,
     #[serde(skip)]
+    load_model: Option<Promise<Option<usize>>>,
+    #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
 }
 
@@ -146,6 +149,7 @@ impl Default for DemoApp {
             models: Default::default(),
             camera_pos: vec3(0., 0., 25.),
             fovy: 60f32,
+            load_model: Default::default(),
             gl_stuff: Default::default(),
         }
     }
@@ -474,7 +478,41 @@ impl DemoApp {
 
     fn model_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("New Model").clicked() {}
+            if ui.button("New Model").clicked() {
+                const URL_BASE: &'static str = if cfg!(target_arch = "wasm32") {
+                    ""
+                } else {
+                    "https://edwar4rd.github.io/2025S_ICG_HW1"
+                };
+
+                let request = ehttp::Request::get(format!("{}{}", URL_BASE, "/model/Csie.json"));
+                let (tx, rx) = Promise::new();
+                ehttp::fetch(request, move |response| {
+                    let resource = response
+                        .ok()
+                        .and_then(|res| {
+                            res.text()
+                                .and_then(|text| serde_json::from_str::<ICGJson>(text).ok())
+                        })
+                        .map(|icgjson| icgjson.vertex_positions.len() / 3 / 3);
+                    tx.send(resource);
+                });
+                self.load_model = Some(rx);
+            }
+
+            if let Some(promise) = &self.load_model {
+                if let Some(result) = promise.ready() {
+                    if let Some(model_size) = result {
+                        ui.label(format!("Loaded {} faces!", model_size));
+                    } else {
+                        ui.label("Failed...");
+                    }
+                } else {
+                    ui.label("Running...");
+                }
+            } else {
+                ui.label("None");
+            }
 
             if ui
                 .button(RichText::new("Clear Models").color(egui::Color32::RED))
