@@ -29,7 +29,7 @@ struct CGObject {
     scale: Vec3,
     shear: Vec3,
     rendering_mode: RenderingMode,
-    json_url: String,
+    model_id: Option<(usize, usize)>,
 }
 
 impl Default for CGObject {
@@ -42,7 +42,7 @@ impl Default for CGObject {
             scale: vec3(1., 1., 1.),
             shear: vec3(90., 90., 90.),
             rendering_mode: Default::default(),
-            json_url: Default::default(),
+            model_id: Default::default(),
         }
     }
 }
@@ -91,18 +91,18 @@ impl CGObject {
         RenderedObject {
             mv_mat: self.mv_matrix(),
             mode: self.rendering_mode as i32,
-            // TODO: load json models
-            model_id: None,
+            model_id: self.model_id.map(|(_self_id, gl_id)| gl_id),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[derive(Default)]
 enum ModelState {
     #[default]
     Ready,
-    Loading,
-    Loaded,
+    Loading(Promise<Option<ICGJson>>),
+    Failed,
+    Loaded(usize),
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -111,12 +111,6 @@ struct CGModel {
     source: String,
     #[serde(skip)]
     state: ModelState,
-}
-
-impl CGModel {
-    fn destroy(self, _gl_stuff: &Arc<Mutex<Option<GLStuff>>>) {
-        // TODO: tell gl to delete the model
-    }
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -128,11 +122,11 @@ pub struct DemoApp {
     selected_object: Option<usize>,
     objects: Vec<CGObject>,
     dummy_object: CGObject,
-    models: Vec<CGModel>,
+    #[serde(skip)]
+    models: Arc<Mutex<BTreeMap<usize, CGModel>>>,
+    model_source: String,
     camera_pos: Vec3,
     fovy: f32,
-    #[serde(skip)]
-    load_model: Option<Promise<Option<usize>>>,
     #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
 }
@@ -147,9 +141,9 @@ impl Default for DemoApp {
             objects: Default::default(),
             dummy_object: Default::default(),
             models: Default::default(),
+            model_source: "/model/".into(),
             camera_pos: vec3(0., 0., 25.),
             fovy: 60f32,
-            load_model: Default::default(),
             gl_stuff: Default::default(),
         }
     }
@@ -363,6 +357,31 @@ impl DemoApp {
                     }
                 });
 
+            egui::ComboBox::new("obj_model", "Model")
+                .selected_text(
+                    selected_obj
+                        .model_id
+                        .and_then(|id| {
+                            self.models
+                                .lock()
+                                .get(&id.0)
+                                .map(|model| model.source.clone())
+                        })
+                        .unwrap_or("None".into()),
+                )
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut selected_obj.model_id, None, "None");
+                    for (id, model) in self.models.lock().iter() {
+                        if let ModelState::Loaded(gl_id) = &model.state {
+                            ui.selectable_value(
+                                &mut selected_obj.model_id,
+                                Some((*id, *gl_id)),
+                                model.source.clone(),
+                            );
+                        }
+                    }
+                });
+
             ui.collapsing("Scale", |ui| {
                 ui.add(Slider::new(&mut selected_obj.scale[0], 0.01..=10.0).text("Scale.x"));
                 ui.add(Slider::new(&mut selected_obj.scale[1], 0.01..=10.0).text("Scale.y"));
@@ -477,6 +496,7 @@ impl DemoApp {
     }
 
     fn model_settings(&mut self, ui: &mut egui::Ui) {
+        ui.text_edit_singleline(&mut self.model_source);
         ui.horizontal(|ui| {
             if ui.button("New Model").clicked() {
                 const URL_BASE: &str = if cfg!(target_arch = "wasm32") {
@@ -485,46 +505,57 @@ impl DemoApp {
                     "https://edwar4rd.github.io/2025S_ICG_HW1"
                 };
 
-                let request = ehttp::Request::get(format!("{}{}", URL_BASE, "/model/Csie.json"));
+                let source = self.model_source.clone();
+                let request = ehttp::Request::get(format!("{}{}", URL_BASE, &source));
                 let (tx, rx) = Promise::new();
                 ehttp::fetch(request, move |response| {
-                    let resource = response
-                        .ok()
-                        .and_then(|res| {
-                            res.text()
-                                .and_then(|text| serde_json::from_str::<ICGJson>(text).ok())
-                        })
-                        .map(|icgjson| icgjson.vertex_positions.len() / 3 / 3);
+                    let resource = response.ok().and_then(|res| {
+                        res.text()
+                            .and_then(|text| serde_json::from_str::<ICGJson>(text).ok())
+                    });
                     tx.send(resource);
                 });
-                self.load_model = Some(rx);
-            }
-
-            if let Some(promise) = &self.load_model {
-                if let Some(result) = promise.ready() {
-                    if let Some(model_size) = result {
-                        ui.label(format!("Loaded {} faces!", model_size));
-                    } else {
-                        ui.label("Failed...");
+                let new_key = self
+                    .models
+                    .lock()
+                    .last_key_value()
+                    .map(|(key, _)| *key + 1)
+                    .unwrap_or(0);
+                self.models.lock().insert(new_key, {
+                    CGModel {
+                        source,
+                        state: ModelState::Loading(rx),
                     }
-                } else {
-                    ui.label("Running...");
-                }
-            } else {
-                ui.label("None");
+                });
             }
-
             if ui
                 .button(RichText::new("Clear Models").color(egui::Color32::RED))
                 .clicked()
             {
-                for model in self.models.drain(..) {
-                    if model.state == ModelState::Loaded {
-                        model.destroy(&self.gl_stuff);
-                    }
-                }
+                self.models.lock().clear();
             }
         });
+
+        for (id, model) in self.models.lock().iter() {
+            ui.horizontal(|ui| {
+                ui.label(format!("{id}"));
+                ui.label(&model.source);
+                match &model.state {
+                    ModelState::Ready => {
+                        ui.label("Ready");
+                    }
+                    ModelState::Loading(_) => {
+                        ui.label("Fetching...");
+                    }
+                    ModelState::Failed => {
+                        ui.label("Failed downloading...");
+                    }
+                    ModelState::Loaded(id) => {
+                        ui.label(format!("Loaded, id {}", id));
+                    }
+                }
+            });
+        }
     }
 
     fn get_scene_data(&self) -> SceneData {
@@ -552,13 +583,15 @@ impl DemoApp {
         // Clone locals so we can move them into the paint callback:
         // TODO: Optimize this
         let gl_stuff = self.gl_stuff.clone();
+        let models = self.models.clone();
         let scene_data = Arc::new(self.get_scene_data());
 
         let cb = egui_glow::CallbackFn::new(move |info, painter| {
             let width = info.clip_rect_in_pixels().width_px;
             let height = info.clip_rect_in_pixels().height_px;
 
-            if let Some(stuff) = gl_stuff.lock().as_ref() {
+            if let Some(stuff) = gl_stuff.lock().as_mut() {
+                stuff.process_model(painter.gl(), &mut models.lock());
                 stuff.paint(
                     painter.gl(),
                     width,
@@ -612,8 +645,13 @@ struct ICGLoaded {
 impl ICGJson {
     fn load_model(&self, vao: VertexArray, gl: &glow::Context) -> ICGLoaded {
         unsafe {
-            let pos_buffer = gl.create_buffer().unwrap();
+            // let bound_vao = gl
+            //     .get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING)
+            //     .unwrap();
+
             gl.bind_vertex_array(Some(vao));
+
+            let pos_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
             let data: &[f32] = &self.vertex_positions;
             gl.buffer_data_u8_slice(
@@ -671,6 +709,51 @@ struct GLStuff {
 
 #[allow(unsafe_code)] // we need unsafe code to use glow
 impl GLStuff {
+    fn process_model(&mut self, gl: &glow::Context, model_list: &mut BTreeMap<usize, CGModel>) {
+        let mut used_model = std::collections::BTreeSet::new();
+        for (_, model) in model_list.iter_mut() {
+            match &mut model.state {
+                ModelState::Ready => {}
+                ModelState::Loading(promise) => {
+                    if let Some(result) = promise.ready() {
+                        if let Some(loaded) = result {
+                            let loaded = loaded.load_model(self.vertex_array, gl);
+                            let new_key = self
+                                .models
+                                .last_key_value()
+                                .map(|(key, _)| *key + 1)
+                                .unwrap_or(0);
+                            self.models.insert(new_key, loaded);
+                            model.state = ModelState::Loaded(new_key);
+                            used_model.insert(new_key);
+                        } else {
+                            model.state = ModelState::Failed;
+                        }
+                    }
+                }
+                ModelState::Failed => {}
+                ModelState::Loaded(id) => {
+                    used_model.insert(*id);
+                }
+            }
+        }
+        let mut mark_delete = Vec::new();
+        for id in &mut self.models.keys() {
+            if !used_model.contains(id) {
+                mark_delete.push(*id);
+            }
+        }
+        for id in mark_delete {
+            let model = self.models.get(&id).unwrap();
+            unsafe {
+                gl.bind_vertex_array(Some(self.vertex_array));
+                model.destroy(gl);
+                gl.bind_vertex_array(None);
+            }
+            self.models.remove(&id);
+        }
+    }
+
     fn new(gl: &glow::Context) -> Option<Self> {
         use glow::HasContext as _;
 
@@ -852,9 +935,6 @@ impl GLStuff {
                     obj.mode,
                 );
 
-                let bound_vao = gl
-                    .get_parameter_vertex_array(glow::VERTEX_ARRAY_BINDING)
-                    .unwrap();
                 gl.bind_vertex_array(Some(self.vertex_array));
                 gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(obj_model.pos_buffer));
@@ -865,7 +945,7 @@ impl GLStuff {
                 gl.vertex_attrib_pointer_f32(vertex_normal_loc, 3, glow::FLOAT, false, 0, 0);
 
                 gl.draw_arrays(glow::TRIANGLES, 0, obj_model.item_count);
-                gl.bind_vertex_array(Some(bound_vao));
+                gl.bind_vertex_array(None);
             }
 
             gl.disable(glow::DEPTH_TEST);
