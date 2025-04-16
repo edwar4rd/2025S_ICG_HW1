@@ -643,6 +643,68 @@ struct ICGLoaded {
 }
 
 impl ICGJson {
+    pub fn from_models_and_materials(models: Vec<tobj::Model>, materials: Vec<tobj::Material>) -> ICGJson {
+        let mut vertex_positions = Vec::new();
+        let mut vertex_normals = Vec::new();
+        let mut vertex_frontcolors = Vec::new();
+        let mut vertex_backcolors = Vec::new();
+        let mut vertex_texture_coords = Vec::new();
+
+        for model in models {
+            let mesh = &model.mesh;
+            let material = mesh.material_id.and_then(|id| materials.get(id));
+            assert_eq!(mesh.face_arities.len(), 0);
+            assert_eq!(mesh.indices.len() % 3, 0);
+
+            for index in &mesh.indices {
+                let index = *index as usize;
+                vertex_positions.push(mesh.positions[index * 3]);
+                vertex_positions.push(mesh.positions[index * 3 + 1]);
+                vertex_positions.push(mesh.positions[index * 3 + 2]);
+
+                if !mesh.normals.is_empty() {
+                    vertex_normals.push(mesh.normals[index * 3]);
+                    vertex_normals.push(mesh.normals[index * 3 + 1]);
+                    vertex_normals.push(mesh.normals[index * 3 + 2]);
+                } else {
+                    vertex_normals.push(0.);
+                    vertex_normals.push(0.);
+                    vertex_normals.push(0.);
+                }
+
+                {
+                    let color = material
+                        .and_then(|material| material.diffuse)
+                        .unwrap_or([0.5, 0.5, 0.5]);
+
+                    vertex_frontcolors.push(color[0]);
+                    vertex_frontcolors.push(color[1]);
+                    vertex_frontcolors.push(color[2]);
+
+                    vertex_backcolors.push(color[0]);
+                    vertex_backcolors.push(color[1]);
+                    vertex_backcolors.push(color[2]);
+                }
+
+                if !mesh.texcoords.is_empty() {
+                    vertex_texture_coords.push(mesh.texcoords[index * 2]);
+                    vertex_texture_coords.push(mesh.texcoords[index * 2 + 1]);
+                } else {
+                    vertex_texture_coords.push(0.0);
+                    vertex_texture_coords.push(0.0);
+                }
+            }
+        }
+
+        ICGJson {
+            vertex_positions,
+            vertex_normals,
+            vertex_frontcolors,
+            vertex_backcolors,
+            vertex_texture_coords
+        }
+    }
+
     fn load_model(&self, vao: VertexArray, gl: &glow::Context) -> ICGLoaded {
         unsafe {
             // let bound_vao = gl
