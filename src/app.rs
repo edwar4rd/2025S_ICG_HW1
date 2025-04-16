@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use eframe::{
-    egui_glow::{self, glow},
+    egui_glow::{self, glow, ShaderVersion},
     glow::{Buffer, HasContext, VertexArray},
 };
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
@@ -122,6 +122,7 @@ pub struct DemoApp {
     selected_object: Option<usize>,
     objects: Vec<CGObject>,
     dummy_object: CGObject,
+    show_lights: bool,
     #[serde(skip)]
     models: Arc<Mutex<BTreeMap<usize, CGModel>>>,
     model_source: String,
@@ -145,6 +146,7 @@ impl Default for DemoApp {
             camera_pos: vec3(0., 0., 25.),
             fovy: 60f32,
             gl_stuff: Default::default(),
+            show_lights: true,
         }
     }
 }
@@ -240,6 +242,7 @@ impl eframe::App for DemoApp {
             ui.add(Slider::new(&mut self.ambient[0], 0.0..=1.0).text("Red"));
             ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
             ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
+            ui.checkbox(&mut self.show_lights, "Show lights?");
             ui.separator();
 
             ui.heading("Camera");
@@ -565,6 +568,7 @@ impl DemoApp {
             ambient_ka: self.ambient_ka,
             camera_pos: self.camera_pos,
             fovy: self.fovy,
+            show_lights: self.show_lights,
         }
     }
 
@@ -622,6 +626,7 @@ struct SceneData {
     ambient_ka: f32,
     camera_pos: Vec3,
     fovy: f32,
+    show_lights: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -643,7 +648,10 @@ struct ICGLoaded {
 }
 
 impl ICGJson {
-    pub fn from_models_and_materials(models: Vec<tobj::Model>, materials: Vec<tobj::Material>) -> ICGJson {
+    pub fn from_models_and_materials(
+        models: Vec<tobj::Model>,
+        materials: Vec<tobj::Material>,
+    ) -> ICGJson {
         let mut vertex_positions = Vec::new();
         let mut vertex_normals = Vec::new();
         let mut vertex_frontcolors = Vec::new();
@@ -701,7 +709,7 @@ impl ICGJson {
             vertex_normals,
             vertex_frontcolors,
             vertex_backcolors,
-            vertex_texture_coords
+            vertex_texture_coords,
         }
     }
 
@@ -764,8 +772,11 @@ impl ICGLoaded {
 
 struct GLStuff {
     program: glow::Program,
+    light_program: glow::Program,
     vertex_array: VertexArray,
+    light_vao: VertexArray,
     default_model: ICGLoaded,
+    light_model: ICGLoaded,
     models: BTreeMap<usize, ICGLoaded>,
 }
 
@@ -816,28 +827,18 @@ impl GLStuff {
         }
     }
 
-    fn new(gl: &glow::Context) -> Option<Self> {
-        use glow::HasContext as _;
-
-        let shader_version = egui_glow::ShaderVersion::get(gl);
-
+    fn create_program(
+        shader_version: ShaderVersion,
+        v_source: &str,
+        f_source: &str,
+        gl: &glow::Context,
+    ) -> glow::Program {
         unsafe {
             let program = gl.create_program().expect("Cannot create program");
 
-            if !shader_version.is_new_shader_interface() {
-                log::warn!(
-                    "Custom 3D painting hasn't been ported to {:?}",
-                    shader_version
-                );
-                return None;
-            }
-
-            let (vertex_shader_source, fragment_shader_source) =
-                (include_str!("vertex.glsl"), include_str!("fragment.glsl"));
-
             let shader_sources = [
-                (glow::VERTEX_SHADER, vertex_shader_source),
-                (glow::FRAGMENT_SHADER, fragment_shader_source),
+                (glow::VERTEX_SHADER, v_source),
+                (glow::FRAGMENT_SHADER, f_source),
             ];
 
             let shaders: Vec<_> = shader_sources
@@ -878,6 +879,44 @@ impl GLStuff {
                 gl.delete_shader(shader);
             }
 
+            program
+        }
+    }
+
+    fn new(gl: &glow::Context) -> Option<Self> {
+        use glow::HasContext as _;
+
+        let shader_version = egui_glow::ShaderVersion::get(gl);
+
+        unsafe {
+            if !shader_version.is_new_shader_interface() {
+                log::warn!(
+                    "Custom 3D painting hasn't been ported to {:?}",
+                    shader_version
+                );
+                return None;
+            }
+
+            let (vertex_shader_source, fragment_shader_source) =
+                (include_str!("vertex.glsl"), include_str!("fragment.glsl"));
+            let program = Self::create_program(
+                shader_version,
+                vertex_shader_source,
+                fragment_shader_source,
+                gl,
+            );
+
+            let (vertex_shader_source, fragment_shader_source) = (
+                include_str!("vertex_simple.glsl"),
+                include_str!("fragment_simple.glsl"),
+            );
+            let light_program = Self::create_program(
+                shader_version,
+                vertex_shader_source,
+                fragment_shader_source,
+                gl,
+            );
+
             let vertex_array = gl.create_vertex_array().unwrap();
 
             gl.bind_vertex_array(Some(vertex_array));
@@ -889,14 +928,34 @@ impl GLStuff {
             gl.enable_vertex_attrib_array(vertex_normal_loc);
             gl.bind_vertex_array(None);
 
+            let light_vao = gl.create_vertex_array().unwrap();
+
+            gl.bind_vertex_array(Some(light_vao));
+            let vertex_position_loc = gl
+                .get_attrib_location(light_program, "aVertexPosition")
+                .unwrap();
+            gl.enable_vertex_attrib_array(vertex_position_loc);
+            let front_color_loc = gl
+                .get_attrib_location(light_program, "aFrontColor")
+                .unwrap();
+            gl.enable_vertex_attrib_array(front_color_loc);
+            gl.bind_vertex_array(None);
+
             let teapot_json = include_str!("../model/Slider.json");
             let teapot_json: ICGJson = serde_json::from_str(teapot_json).unwrap();
             let teapot_model = teapot_json.load_model(vertex_array, gl);
 
+            let light_json = include_str!("../model/Light.json");
+            let light_json: ICGJson = serde_json::from_str(light_json).unwrap();
+            let light_model = light_json.load_model(vertex_array, gl);
+
             Some(Self {
                 program,
+                light_program,
                 vertex_array,
+                light_vao,
                 default_model: teapot_model,
+                light_model,
                 models: BTreeMap::new(),
             })
         }
@@ -907,6 +966,7 @@ impl GLStuff {
         unsafe {
             gl.delete_program(self.program);
             self.default_model.destroy(gl);
+            self.light_model.destroy(gl);
             for model in self.models.values() {
                 model.destroy(gl);
             }
@@ -950,7 +1010,7 @@ impl GLStuff {
             );
             gl.uniform_3_f32_slice(
                 gl.get_uniform_location(self.program, "lightColor").as_ref(),
-                &[1., 1., 1., 1., 1., 1., 1., 1., 1.],
+                &[1., 1., 0., 1., 0., 1., 0., 1., 1.],
             );
             gl.uniform_3_f32_slice(
                 gl.get_uniform_location(self.program, "lightKdKsCD")
@@ -1011,6 +1071,54 @@ impl GLStuff {
             }
 
             gl.disable(glow::DEPTH_TEST);
+
+            if scene_data.show_lights {
+                let light_pos = vec![vec3(0., 5., 5.), vec3(17., 5., -2.), vec3(-17., 5., -2.)];
+                let light_color = vec![vec3(1., 1., 0.), vec3(1., 0., 1.), vec3(0., 1., 1.)];
+
+                for light_id in 0..3 {
+                    gl.use_program(Some(self.light_program));
+                    let p_mat_loc = gl
+                        .get_uniform_location(self.light_program, "uPMatrix")
+                        .unwrap();
+                    let mv_mat_loc = gl
+                        .get_uniform_location(self.light_program, "uMVMatrix")
+                        .unwrap();
+                    let vertex_position_loc = gl
+                        .get_attrib_location(self.light_program, "aVertexPosition")
+                        .unwrap();
+                    let front_color_loc = gl
+                        .get_attrib_location(self.light_program, "aFrontColor")
+                        .unwrap();
+
+                    gl.bind_vertex_array(Some(self.light_vao));
+                    gl.uniform_matrix_4_f32_slice(
+                        Some(&mv_mat_loc),
+                        false,
+                        &Mat4::from_translation(light_pos[light_id]).to_cols_array(),
+                    );
+                    gl.uniform_matrix_4_f32_slice(
+                        Some(&p_mat_loc),
+                        false,
+                        &perspective_mat.to_cols_array(),
+                    );
+                    gl.uniform_3_f32_slice(
+                        gl.get_uniform_location(self.light_program, "ambient_color")
+                            .as_ref(),
+                        &light_color[light_id].to_array(),
+                    );
+                    gl.uniform_1_f32(
+                        gl.get_uniform_location(self.light_program, "Ka").as_ref(),
+                        1.0,
+                    );
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.light_model.pos_buffer));
+                    gl.vertex_attrib_pointer_f32(vertex_position_loc, 3, glow::FLOAT, false, 0, 0);
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.light_model.color_buffer));
+                    gl.vertex_attrib_pointer_f32(front_color_loc, 3, glow::FLOAT, false, 0, 0);
+                    gl.draw_arrays(glow::TRIANGLES, 0, self.light_model.item_count);
+                    gl.bind_vertex_array(None);
+                }
+            }
         }
     }
 }
