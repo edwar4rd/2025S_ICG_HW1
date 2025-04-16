@@ -127,6 +127,8 @@ pub struct DemoApp {
     models: Arc<Mutex<BTreeMap<usize, CGModel>>>,
     model_source: String,
     camera_pos: Vec3,
+    camera_phi: f32,
+    camera_up: f32,
     fovy: f32,
     #[serde(skip)]
     gl_stuff: Arc<Mutex<Option<GLStuff>>>,
@@ -144,6 +146,8 @@ impl Default for DemoApp {
             models: Default::default(),
             model_source: "/model/".into(),
             camera_pos: vec3(0., 0., 25.),
+            camera_phi: Default::default(),
+            camera_up: Default::default(),
             fovy: 60f32,
             gl_stuff: Default::default(),
             show_lights: true,
@@ -250,6 +254,8 @@ impl eframe::App for DemoApp {
             ui.label(format!("y: {}", self.camera_pos.y));
             ui.label(format!("z: {}", self.camera_pos.z));
             ui.add(Slider::new(&mut self.fovy, 0.0..=180.).text("fov"));
+            ui.add(Slider::new(&mut self.camera_up, -90.0..=90.).text("angle"));
+            ui.add(Slider::new(&mut self.camera_phi, -180.0..=180.).text("phi"));
             ui.separator();
 
             ui.heading("Objects");
@@ -567,6 +573,8 @@ impl DemoApp {
             ambient: self.ambient,
             ambient_ka: self.ambient_ka,
             camera_pos: self.camera_pos,
+            camera_phi: self.camera_phi,
+            camera_up: self.camera_up,
             fovy: self.fovy,
             show_lights: self.show_lights,
         }
@@ -625,6 +633,8 @@ struct SceneData {
     ambient: [f32; 3],
     ambient_ka: f32,
     camera_pos: Vec3,
+    camera_up: f32,
+    camera_phi: f32,
     fovy: f32,
     show_lights: bool,
 }
@@ -987,7 +997,9 @@ impl GLStuff {
             width as f32 / height as f32,
             0.1,
             100.0,
-        ) * Mat4::from_translation(-scene_data.camera_pos);
+        ) * Mat4::from_rotation_x(-scene_data.camera_up.to_radians())
+            * Mat4::from_rotation_y(scene_data.camera_phi.to_radians())
+            * Mat4::from_translation(-scene_data.camera_pos);
 
         unsafe {
             gl.use_program(Some(self.program));
