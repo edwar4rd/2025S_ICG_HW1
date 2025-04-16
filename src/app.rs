@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use eframe::{
     egui_glow::{self, glow},
-    glow::{Buffer, VertexArray},
+    glow::{Buffer, HasContext, VertexArray},
 };
 use egui::{mutex::Mutex, Checkbox, RichText, Slider};
 use glam::{vec3, Mat4, Quat, Vec3};
@@ -92,7 +92,7 @@ impl CGObject {
             mv_mat: self.mv_matrix(),
             mode: self.rendering_mode as i32,
             // TODO: load json models
-            _model_id: None,
+            model_id: None,
         }
     }
 }
@@ -479,7 +479,7 @@ impl DemoApp {
     fn model_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("New Model").clicked() {
-                const URL_BASE: &'static str = if cfg!(target_arch = "wasm32") {
+                const URL_BASE: &str = if cfg!(target_arch = "wasm32") {
                     "."
                 } else {
                     "https://edwar4rd.github.io/2025S_ICG_HW1"
@@ -580,7 +580,7 @@ impl DemoApp {
 struct RenderedObject {
     mv_mat: Mat4,
     mode: i32,
-    _model_id: Option<i32>,
+    model_id: Option<usize>,
 }
 
 struct SceneData {
@@ -591,24 +591,82 @@ struct SceneData {
     fovy: f32,
 }
 
-struct GLStuff {
-    program: glow::Program,
-    vertex_array: VertexArray,
-    pos_buffer: Buffer,
-    color_buffer: Buffer,
-    norm_buffer: Buffer,
-    item_count: i32,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ICGJson {
+struct ICGJson {
     vertex_positions: Vec<f32>,
     vertex_normals: Vec<f32>,
     vertex_frontcolors: Vec<f32>,
     vertex_backcolors: Vec<f32>,
     #[serde(default)]
     vertex_texture_coords: Vec<f32>,
+}
+
+struct ICGLoaded {
+    pos_buffer: Buffer,
+    color_buffer: Buffer,
+    norm_buffer: Buffer,
+    item_count: i32,
+}
+
+impl ICGJson {
+    fn load_model(&self, vao: VertexArray, gl: &glow::Context) -> ICGLoaded {
+        unsafe {
+            let pos_buffer = gl.create_buffer().unwrap();
+            gl.bind_vertex_array(Some(vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
+            let data: &[f32] = &self.vertex_positions;
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(data),
+                glow::STATIC_DRAW,
+            );
+
+            let color_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(color_buffer));
+            let data: &[f32] = &self.vertex_frontcolors;
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(data),
+                glow::STATIC_DRAW,
+            );
+
+            let norm_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(norm_buffer));
+            let data: &[f32] = &self.vertex_normals;
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(data),
+                glow::STATIC_DRAW,
+            );
+
+            gl.bind_vertex_array(None);
+
+            ICGLoaded {
+                pos_buffer,
+                color_buffer,
+                norm_buffer,
+                item_count: self.vertex_positions.len() as i32 / 3,
+            }
+        }
+    }
+}
+
+impl ICGLoaded {
+    fn destroy(&self, gl: &glow::Context) {
+        unsafe {
+            gl.delete_buffer(self.pos_buffer);
+            gl.delete_buffer(self.color_buffer);
+            gl.delete_buffer(self.norm_buffer);
+        }
+    }
+}
+
+struct GLStuff {
+    program: glow::Program,
+    vertex_array: VertexArray,
+    default_model: ICGLoaded,
+    models: BTreeMap<usize, ICGLoaded>,
 }
 
 #[allow(unsafe_code)] // we need unsafe code to use glow
@@ -675,56 +733,26 @@ impl GLStuff {
                 gl.delete_shader(shader);
             }
 
-            let teapot_json = include_str!("../model/Slider.json");
-            let teapot_json: ICGJson = serde_json::from_str(teapot_json).unwrap();
-
             let vertex_array = gl.create_vertex_array().unwrap();
 
             gl.bind_vertex_array(Some(vertex_array));
-
             let vertex_position_loc = gl.get_attrib_location(program, "aVertexPosition").unwrap();
             gl.enable_vertex_attrib_array(vertex_position_loc);
             let front_color_loc = gl.get_attrib_location(program, "aFrontColor").unwrap();
             gl.enable_vertex_attrib_array(front_color_loc);
             let vertex_normal_loc = gl.get_attrib_location(program, "aVertexNormal").unwrap();
             gl.enable_vertex_attrib_array(vertex_normal_loc);
-
-            let pos_buffer = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(pos_buffer));
-            let data: &[f32] = &teapot_json.vertex_positions;
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(data),
-                glow::STATIC_DRAW,
-            );
-
-            let color_buffer = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(color_buffer));
-            let data: &[f32] = &teapot_json.vertex_frontcolors;
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(data),
-                glow::STATIC_DRAW,
-            );
-
-            let norm_buffer = gl.create_buffer().unwrap();
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(norm_buffer));
-            let data: &[f32] = &teapot_json.vertex_normals;
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                bytemuck::cast_slice(data),
-                glow::STATIC_DRAW,
-            );
-
             gl.bind_vertex_array(None);
+
+            let teapot_json = include_str!("../model/Slider.json");
+            let teapot_json: ICGJson = serde_json::from_str(teapot_json).unwrap();
+            let teapot_model = teapot_json.load_model(vertex_array, gl);
 
             Some(Self {
                 program,
                 vertex_array,
-                pos_buffer,
-                color_buffer,
-                norm_buffer,
-                item_count: (teapot_json.vertex_positions.len() / 3) as i32,
+                default_model: teapot_model,
+                models: BTreeMap::new(),
             })
         }
     }
@@ -733,9 +761,10 @@ impl GLStuff {
         use glow::HasContext as _;
         unsafe {
             gl.delete_program(self.program);
-            gl.delete_buffer(self.pos_buffer);
-            gl.delete_buffer(self.color_buffer);
-            gl.delete_buffer(self.norm_buffer);
+            self.default_model.destroy(gl);
+            for model in self.models.values() {
+                model.destroy(gl);
+            }
         }
     }
 
@@ -802,6 +831,16 @@ impl GLStuff {
                 .unwrap();
 
             for obj in scene_data.objs.iter() {
+                let obj_model = if let Some(id) = obj.model_id {
+                    if let Some(model) = self.models.get(&id) {
+                        model
+                    } else {
+                        &self.default_model
+                    }
+                } else {
+                    &self.default_model
+                };
+
                 gl.uniform_matrix_4_f32_slice(
                     Some(&mv_mat_loc),
                     false,
@@ -818,14 +857,14 @@ impl GLStuff {
                     .unwrap();
                 gl.bind_vertex_array(Some(self.vertex_array));
                 gl.bind_framebuffer(glow::FRAMEBUFFER, intermediate_fbo);
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.pos_buffer));
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(obj_model.pos_buffer));
                 gl.vertex_attrib_pointer_f32(vertex_position_loc, 3, glow::FLOAT, false, 0, 0);
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.color_buffer));
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(obj_model.color_buffer));
                 gl.vertex_attrib_pointer_f32(front_color_loc, 3, glow::FLOAT, false, 0, 0);
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.norm_buffer));
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(obj_model.norm_buffer));
                 gl.vertex_attrib_pointer_f32(vertex_normal_loc, 3, glow::FLOAT, false, 0, 0);
 
-                gl.draw_arrays(glow::TRIANGLES, 0, self.item_count);
+                gl.draw_arrays(glow::TRIANGLES, 0, obj_model.item_count);
                 gl.bind_vertex_array(Some(bound_vao));
             }
 
