@@ -11,8 +11,12 @@ uniform float Ka;
 uniform vec3 ambient_color;
 
 uniform int mode;
+uniform vec3 clipping_plane;
+uniform vec3 clipping_plane_pos;
 
 out vec3 shading_mode;
+out vec3 clipping_plane_f;
+out vec3 clipping_plane_pos_f;
 
 // for flat shading
 flat out vec4 flatcolor;
@@ -31,8 +35,8 @@ out float Ka_val;
 out vec3 ambient_lightColor;
 
 vec3 shading(vec3 vertex) {
-    vec3 phong = vec3(0.f, 0.f, 0.f);
-    vec3 mvVertex = (uMVMatrix * vec4(vertex, 1.0f)).xyz;
+    vec3 phong = vec3(0., 0., 0.);
+    vec3 mvVertex = (uMVMatrix * vec4(vertex, 1.0)).xyz;
     vec3 mvNormal = mat3(uMVMatrix) * aVertexNormal;
 
     float ka = Ka;
@@ -46,14 +50,14 @@ vec3 shading(vec3 vertex) {
         vec3 L = normalize(lightLoc[i] - mvVertex);
         vec3 H = normalize(L + V);
 
-        vec3 Id = lightColor[i] * max(dot(L, N), 0.f);
+        vec3 Id = lightColor[i] * max(dot(L, N), 0.);
         vec3 diffuse = kd * Id;
 
-        vec3 Is = lightColor[i] * pow(max(dot(H, N), 0.f), CosineDegree);
+        vec3 Is = lightColor[i] * pow(max(dot(H, N), 0.), CosineDegree);
         vec3 specular = ks * Is;
 
-        if(dot(L, N) < 0.f) {
-            specular = vec3(0.f, 0.f, 0.f);
+        if(dot(L, N) < 0.) {
+            specular = vec3(0., 0., 0.);
         }
         phong += aFrontColor * (ambient + diffuse) + specular;
     }
@@ -64,21 +68,23 @@ void main(void) {
     shading_mode = vec3(mode);
 
     vec3 vertex_copy = aVertexPosition;
+    fragPosition = (uMVMatrix * vec4(vertex_copy, 1.0)).xyz;
+    clipping_plane_f = clipping_plane;
+    clipping_plane_pos_f = clipping_plane_pos;
 
     if(mode == 0) {
         // flat shading
-        flatcolor = vec4(shading(vertex_copy), 1.0f);
+        flatcolor = vec4(shading(vertex_copy), 1.0);
     }
 
     if(mode == 1) {
         // gouraud shading
-        fragcolor = vec4(shading(vertex_copy), 1.0f);
+        fragcolor = vec4(shading(vertex_copy), 1.0);
     }
 
-    if(mode == 2 || mode == 3 || mode == 4)  {
+    if(mode == 2 || mode == 3 || mode == 4) {
         // phong shading
         vertexColor = aFrontColor;
-        fragPosition = (uMVMatrix * vec4(vertex_copy, 1.0f)).xyz;
         fragNormal = mat3(uMVMatrix) * aVertexNormal;
         Ka_val = Ka;
         ambient_lightColor = ambient_color;
@@ -89,5 +95,5 @@ void main(void) {
         }
     }
 
-    gl_Position = uPMatrix * uMVMatrix * vec4(vertex_copy, 1.0f);
+    gl_Position = uPMatrix * uMVMatrix * vec4(vertex_copy, 1.0);
 }

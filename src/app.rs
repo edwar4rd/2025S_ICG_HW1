@@ -123,6 +123,9 @@ pub struct DemoApp {
     objects: Vec<CGObject>,
     dummy_object: CGObject,
     show_lights: bool,
+    light_depth: bool,
+    clipping_pos: Vec3,
+    clipping_vec: Vec3,
     #[serde(skip)]
     models: Arc<Mutex<BTreeMap<usize, CGModel>>>,
     model_source: String,
@@ -151,6 +154,9 @@ impl Default for DemoApp {
             fovy: 60f32,
             gl_stuff: Default::default(),
             show_lights: true,
+            light_depth: true,
+            clipping_pos: vec3(0., 0., -100.),
+            clipping_vec: vec3(0., 0., 1.),
         }
     }
 }
@@ -247,6 +253,7 @@ impl eframe::App for DemoApp {
             ui.add(Slider::new(&mut self.ambient[1], 0.0..=1.0).text("Green"));
             ui.add(Slider::new(&mut self.ambient[2], 0.0..=1.0).text("Blue"));
             ui.checkbox(&mut self.show_lights, "Show lights?");
+            ui.checkbox(&mut self.light_depth, "Light object with depth?");
             ui.separator();
 
             ui.heading("Camera");
@@ -256,6 +263,15 @@ impl eframe::App for DemoApp {
             ui.add(Slider::new(&mut self.fovy, 0.0..=180.).text("fov"));
             ui.add(Slider::new(&mut self.camera_up, -90.0..=90.).text("angle"));
             ui.add(Slider::new(&mut self.camera_phi, -180.0..=180.).text("phi"));
+            ui.separator();
+
+            ui.heading("Clipping");
+            ui.add(Slider::new(&mut self.clipping_pos[0], -100.0..=100.0).text("Pos X"));
+            ui.add(Slider::new(&mut self.clipping_pos[1], -100.0..=100.0).text("Pos Y"));
+            ui.add(Slider::new(&mut self.clipping_pos[2], -100.0..=100.0).text("Pos Z"));
+            ui.add(Slider::new(&mut self.clipping_vec[0], -1.0..=1.0).text("Vec X"));
+            ui.add(Slider::new(&mut self.clipping_vec[1], -1.0..=1.0).text("Vec Y"));
+            ui.add(Slider::new(&mut self.clipping_vec[2], -1.0..=1.0).text("Vec Z"));
             ui.separator();
 
             ui.heading("Objects");
@@ -577,6 +593,9 @@ impl DemoApp {
             camera_up: self.camera_up,
             fovy: self.fovy,
             show_lights: self.show_lights,
+            light_depth: self.light_depth,
+            clipping_pos: self.clipping_pos,
+            clipping_vec: self.clipping_vec,        
         }
     }
 
@@ -637,6 +656,9 @@ struct SceneData {
     camera_phi: f32,
     fovy: f32,
     show_lights: bool,
+    light_depth: bool,
+    clipping_pos: Vec3,
+    clipping_vec: Vec3,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1011,6 +1033,16 @@ impl GLStuff {
             let p_mat_loc = gl.get_uniform_location(self.program, "uPMatrix").unwrap();
             let mv_mat_loc = gl.get_uniform_location(self.program, "uMVMatrix").unwrap();
 
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "clipping_plane_pos")
+                    .as_ref(),
+                &scene_data.clipping_pos.to_array(),
+            );
+            gl.uniform_3_f32_slice(
+                gl.get_uniform_location(self.program, "clipping_plane")
+                    .as_ref(),
+                &scene_data.clipping_vec.to_array(),
+            );
             gl.uniform_matrix_4_f32_slice(
                 Some(&p_mat_loc),
                 false,
@@ -1082,7 +1114,9 @@ impl GLStuff {
                 gl.bind_vertex_array(None);
             }
 
-            gl.disable(glow::DEPTH_TEST);
+            if !scene_data.light_depth {
+                gl.disable(glow::DEPTH_TEST);
+            }
 
             if scene_data.show_lights {
                 let light_pos = vec![vec3(0., 5., 5.), vec3(17., 5., -2.), vec3(-17., 5., -2.)];
@@ -1130,6 +1164,10 @@ impl GLStuff {
                     gl.draw_arrays(glow::TRIANGLES, 0, self.light_model.item_count);
                     gl.bind_vertex_array(None);
                 }
+            }
+            
+            if !scene_data.light_depth {
+                gl.enable(glow::DEPTH_TEST);
             }
         }
     }
