@@ -24,5 +24,5 @@ cargo run --release
 
 ## FAQ
 
-- The page can be stucked loading sometimes due to caching errors.\
+- The page can be stuck loading sometimes due to caching errors.\
   Try force refreshing the page with `Shift` + `F5` or `Ctrl` + `Shift` + `R`.
